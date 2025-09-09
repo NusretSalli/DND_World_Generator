@@ -62,6 +62,11 @@
             margin-top: 20px;
             cursor: pointer;
         }
+        #random-name-btn {
+            width: 150px;
+            margin-top: 5px;
+            padding: 5px;
+        }
     </style>
 </head>
 
@@ -71,6 +76,15 @@
         <form action="/create_character" method="post">
             <label for="name">Character Name:</label>
             <input type="text" id="name" name="name" required>
+            <button type="button" id="random-name-btn">Suggest Name</button>
+
+            <label>Gender:</label>
+            <div>
+                <input type="radio" id="male" name="gender" value="male" checked>
+                <label for="male">Male</label>
+                <input type="radio" id="female" name="gender" value="female">
+                <label for="female">Female</label>
+            </div>
 
             <label for="race">Race:</label>
             <select id="race" name="race">
@@ -132,6 +146,17 @@
             <button type="submit">Create Character</button>
         </form>
     </div>
+    <script>
+        document.getElementById('random-name-btn').addEventListener('click', () => {
+            const race = document.getElementById('race').value;
+            const gender = document.querySelector('input[name="gender"]:checked').value;
+            fetch(`/generate_name?race=${race}&gender=${gender}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('name').value = data.name;
+                });
+        });
+    </script>
 </body>
 
 </html>
