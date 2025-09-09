@@ -1,8 +1,8 @@
-# D&D World Generator
+# **D&D World Generator**
 
 A web-based Dungeons & Dragons character creation and management system. This application allows users to create, view, and manage D&D characters with features like random name generation based on race and gender.
 
-## Features
+## **Features**
 
 - Character creation with:
   - Race selection (Human, Elf, Dwarf, etc.)
@@ -15,7 +15,7 @@ A web-based Dungeons & Dragons character creation and management system. This ap
   - Delete characters
   - Persistent storage using SQLite database
 
-## Project Roadmap
+## **Project Roadmap**
 
 ```mermaid
 graph TD
@@ -47,7 +47,7 @@ graph TD
     J --> K
 ```
 
-## Setup
+## **Setup**
 
 1. Install requirements:
 ```bash
@@ -60,3 +60,15 @@ python app.py
 ```
 
 3. Access the application at `http://localhost:5000`
+
+
+## **Checklist**
+
+- [x] initial character creation added
+- [x] database for character created
+- [ ] Develop character stat interaction
+- [ ] Implement enemies, creatures, etc.
+- [ ] Implement weapons, spells, dice interactions, etc.
+- [ ] Character inventory management
+- [ ] LLM narration integration
+- [ ] Map generration
