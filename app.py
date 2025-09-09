@@ -16,6 +16,19 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dnd_characters.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# Item Model
+class Item(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    item_type = db.Column(db.String(50), nullable=False)  # weapon, armor, gear, etc.
+    description = db.Column(db.Text)
+    weight = db.Column(db.Float)
+    value = db.Column(db.Integer)  # in gold pieces
+    character_id = db.Column(db.Integer, db.ForeignKey('character.id'))
+
+    def __repr__(self):
+        return f'<Item {self.name}>'
+
 # Character Model
 class Character(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -23,19 +36,68 @@ class Character(db.Model):
     gender = db.Column(db.String(20), nullable=False)
     race = db.Column(db.String(50), nullable=False)
     character_class = db.Column(db.String(50), nullable=False)
+    level = db.Column(db.Integer, nullable=False, default=1)
+    experience = db.Column(db.Integer, nullable=False, default=0)
+    max_hp = db.Column(db.Integer, nullable=False)
+    current_hp = db.Column(db.Integer, nullable=False)
+    armor_class = db.Column(db.Integer, nullable=False, default=10)
+    
+    # Ability Scores
     strength = db.Column(db.Integer, nullable=False)
     dexterity = db.Column(db.Integer, nullable=False)
     constitution = db.Column(db.Integer, nullable=False)
     intelligence = db.Column(db.Integer, nullable=False)
     wisdom = db.Column(db.Integer, nullable=False)
     charisma = db.Column(db.Integer, nullable=False)
+    
+    # Currency
+    copper = db.Column(db.Integer, default=0)
+    silver = db.Column(db.Integer, default=0)
+    gold = db.Column(db.Integer, default=0)
+    platinum = db.Column(db.Integer, default=0)
+    
+    # Relationships
+    inventory = db.relationship('Item', backref='owner', lazy=True)
 
     def __repr__(self):
         return f'<Character {self.name}>'
+    
+    def add_item(self, name, item_type, description="", weight=0, value=0):
+        item = Item(
+            name=name,
+            item_type=item_type,
+            description=description,
+            weight=weight,
+            value=value,
+            character_id=self.id
+        )
+        db.session.add(item)
+        db.session.commit()
+    
+    def remove_item(self, item_id):
+        item = Item.query.get(item_id)
+        if item and item.character_id == self.id:
+            db.session.delete(item)
+            db.session.commit()
+            return True
+        return False
+    
+    @property
+    def total_weight(self):
+        return sum(item.weight for item in self.inventory)
+    
+    @property
+    def strength_modifier(self):
+        return (self.strength - 10) // 2
+    
+    @property
+    def carrying_capacity(self):
+        return self.strength * 15  # Basic carrying capacity rules
 
 # Create the database tables
 with app.app_context():
-    db.create_all()
+    db.drop_all()  # Drop all existing tables
+    db.create_all()  # Create fresh tables with new schema
 
 # Mapping races to pynames generators
 RACE_TO_GENERATOR = {
@@ -73,27 +135,111 @@ def generate_name():
 
     return jsonify(name=name)
 
+def calculate_max_hp(char_class, constitution_mod, level=1):
+    # Base HP calculation for D&D 5E
+    class_hit_dice = {
+        'barbarian': 12,
+        'fighter': 10, 'paladin': 10, 'ranger': 10,
+        'bard': 8, 'cleric': 8, 'druid': 8, 'monk': 8, 'rogue': 8, 'warlock': 8,
+        'sorcerer': 6, 'wizard': 6
+    }
+    
+    base_hp = class_hit_dice.get(char_class.lower(), 8)  # default to 8 if class not found
+    
+    # At 1st level, you get maximum hit dice + constitution modifier
+    max_hp = base_hp + constitution_mod
+    
+    # For each level after 1st, add average hit dice + constitution modifier
+    if level > 1:
+        avg_hp_per_level = ((base_hp + 1) // 2) + constitution_mod  # average of hit dice + con mod
+        max_hp += (level - 1) * avg_hp_per_level
+    
+    return max_hp
+
 @app.route('/create_character', methods=['POST'])
 def create_character():
+    # Calculate ability modifiers
+    constitution = int(request.form.get('constitution'))
+    constitution_mod = (constitution - 10) // 2
+    
+    # Get character class and calculate HP
+    char_class = request.form.get('class')
+    max_hp = calculate_max_hp(char_class, constitution_mod)
+    
     # Create a new character instance
     new_character = Character(
         name=request.form.get('name'),
         gender=request.form.get('gender'),
         race=request.form.get('race'),
-        character_class=request.form.get('class'),  # Note: using character_class because class is a reserved word
+        character_class=char_class,
+        level=1,  # Starting at level 1
+        experience=0,  # Starting with 0 XP
+        max_hp=max_hp,
+        current_hp=max_hp,  # Starting at full health
+        armor_class=10 + ((int(request.form.get('dexterity')) - 10) // 2),  # Base AC + DEX modifier
         strength=int(request.form.get('strength')),
         dexterity=int(request.form.get('dexterity')),
-        constitution=int(request.form.get('constitution')),
+        constitution=constitution,
         intelligence=int(request.form.get('intelligence')),
         wisdom=int(request.form.get('wisdom')),
-        charisma=int(request.form.get('charisma'))
+        charisma=int(request.form.get('charisma')),
+        gold=50  # Starting gold for most 5E characters
     )
     
     # Add and commit to database
     db.session.add(new_character)
     db.session.commit()
     
+    # Add starting equipment based on class
+    add_starting_equipment(new_character)
+    
     return redirect(url_for('view_characters'))
+
+def add_starting_equipment(character):
+    """Add basic starting equipment based on character class"""
+    # Basic equipment that everyone gets
+    basic_equipment = [
+        ('Backpack', 'gear', 'A sturdy backpack', 2, 2),
+        ('Bedroll', 'gear', 'A warm bedroll for resting', 7, 1),
+        ('Rope, hempen (50 feet)', 'gear', 'Strong rope made of hemp', 10, 1),
+        ('Waterskin', 'gear', 'A leather container for water', 5, 2)
+    ]
+    
+    # Add basic equipment
+    for item in basic_equipment:
+        character.add_item(
+            name=item[0],
+            item_type=item[1],
+            description=item[2],
+            weight=item[3],
+            value=item[4]
+        )
+    
+    # Class-specific starting equipment
+    class_equipment = {
+        'fighter': [
+            ('Longsword', 'weapon', 'A versatile sword', 3, 15),
+            ('Shield', 'armor', 'A wooden shield', 6, 10),
+            ('Chain mail', 'armor', 'Heavy armor made of chain links', 55, 75)
+        ],
+        'wizard': [
+            ('Spellbook', 'gear', 'A book for recording spells', 3, 50),
+            ('Component pouch', 'gear', 'A small pouch for spell components', 2, 25),
+            ('Quarterstaff', 'weapon', 'A wooden staff', 4, 2)
+        ],
+        # Add more class-specific equipment as needed
+    }
+    
+    # Add class-specific equipment if available
+    if character.character_class.lower() in class_equipment:
+        for item in class_equipment[character.character_class.lower()]:
+            character.add_item(
+                name=item[0],
+                item_type=item[1],
+                description=item[2],
+                weight=item[3],
+                value=item[4]
+            )
 
 @app.route('/characters')
 def view_characters():

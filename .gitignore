@@ -5,3 +5,6 @@ instance/
 
 # ignore virtual environment folder
 .venv/
+
+# ignore ideas.txt file
+ideas.txt
