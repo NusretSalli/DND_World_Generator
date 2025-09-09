@@ -8,3 +8,10 @@ instance/
 
 # ignore ideas.txt file
 ideas.txt
+
+# ignore migrations folder
+migrations/
+
+# ignore __pycache__ folders and .pyc files
+__pycache__/
+*.pyc

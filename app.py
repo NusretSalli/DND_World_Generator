@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from pynames import GENDER, LANGUAGE
 from pynames.generators.elven import WarhammerNamesGenerator, DnDNamesGenerator
 from pynames.generators.goblin import GoblinGenerator
@@ -15,6 +16,7 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dnd_characters.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 # Item Model
 class Item(db.Model):
@@ -93,11 +95,6 @@ class Character(db.Model):
     @property
     def carrying_capacity(self):
         return self.strength * 15  # Basic carrying capacity rules
-
-# Create the database tables
-with app.app_context():
-    db.drop_all()  # Drop all existing tables
-    db.create_all()  # Create fresh tables with new schema
 
 # Mapping races to pynames generators
 RACE_TO_GENERATOR = {
@@ -253,5 +250,25 @@ def delete_character(character_id):
     db.session.commit()
     return redirect(url_for('view_characters'))
 
+def upgrade_db():
+    # Import necessary modules here to avoid circular imports
+    from flask_migrate import Migrate, upgrade
+    
+    with app.app_context():
+        migrate = Migrate(app, db)
+        try:
+            # Generate migration if there are changes
+            from flask_migrate import migrate as migrate_command
+            migrate_command()
+        except Exception as e:
+            print(f"Migration warning (this is normal if there are no changes): {e}")
+        
+        try:
+            # Apply any pending migrations
+            upgrade()
+        except Exception as e:
+            print(f"Upgrade error: {e}")
+
 if __name__ == '__main__':
+    upgrade_db()  # Run migrations automatically
     app.run(debug=True)
