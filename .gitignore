@@ -1,0 +1,7 @@
+
+
+# ignore instance folder and its contents
+instance/
+
+# ignore virtual environment folder
+.venv/
