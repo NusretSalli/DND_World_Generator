@@ -10,6 +10,7 @@ from pynames.generators.orc import OrcNamesGenerator
 from pynames.generators.russian import PaganNamesGenerator
 from pynames.generators.scandinavian import ScandinavianNamesGenerator
 import os
+from items import CLASS_EQUIPMENT
 
 app = Flask(__name__)
 # Configure SQLAlchemy
@@ -194,49 +195,21 @@ def create_character():
 
 def add_starting_equipment(character):
     """Add basic starting equipment based on character class"""
-    # Basic equipment that everyone gets
-    basic_equipment = [
-        ('Backpack', 'gear', 'A sturdy backpack', 2, 2),
-        ('Bedroll', 'gear', 'A warm bedroll for resting', 7, 1),
-        ('Rope, hempen (50 feet)', 'gear', 'Strong rope made of hemp', 10, 1),
-        ('Waterskin', 'gear', 'A leather container for water', 5, 2)
-    ]
+    char_class = character.character_class.lower()
     
-    # Add basic equipment
-    for item in basic_equipment:
-        character.add_item(
-            name=item[0],
-            item_type=item[1],
-            description=item[2],
-            weight=item[3],
-            value=item[4]
-        )
-    
-    # Class-specific starting equipment
-    class_equipment = {
-        'fighter': [
-            ('Longsword', 'weapon', 'A versatile sword', 3, 15),
-            ('Shield', 'armor', 'A wooden shield', 6, 10),
-            ('Chain mail', 'armor', 'Heavy armor made of chain links', 55, 75)
-        ],
-        'wizard': [
-            ('Spellbook', 'gear', 'A book for recording spells', 3, 50),
-            ('Component pouch', 'gear', 'A small pouch for spell components', 2, 25),
-            ('Quarterstaff', 'weapon', 'A wooden staff', 4, 2)
-        ],
-        # Add more class-specific equipment as needed
-    }
-    
-    # Add class-specific equipment if available
-    if character.character_class.lower() in class_equipment:
-        for item in class_equipment[character.character_class.lower()]:
-            character.add_item(
-                name=item[0],
-                item_type=item[1],
-                description=item[2],
-                weight=item[3],
-                value=item[4]
-            )
+    if char_class in CLASS_EQUIPMENT:
+        equipment = CLASS_EQUIPMENT[char_class]
+        
+        # Add all items from the class equipment list
+        for item_list in equipment.values():
+            for item in item_list:
+                character.add_item(
+                    name=item.name,
+                    item_type=item.item_type,
+                    description=item.description,
+                    weight=item.weight,
+                    value=item.value
+                )
 
 @app.route('/characters')
 def view_characters():
