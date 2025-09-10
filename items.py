@@ -214,7 +214,7 @@ CLASS_EQUIPMENT = {
         'armor': []
     },
     'bard': {
-        'gear': [GEAR['Backpack'], GEAR['Bedroll'], GEAR['Costume, common'], GEAR['Candle'], GEAR['Rations (1 day)']],
+        'gear': [GEAR['Backpack'], GEAR['Bedroll'], GEAR['Candle'], GEAR['Rations (1 day)']],
         'weapons': [WEAPONS['Rapier'], WEAPONS['Dagger']],
         'armor': [ARMOR['Leather']]
     },
@@ -224,7 +224,7 @@ CLASS_EQUIPMENT = {
         'armor': [ARMOR['Chain Mail'], ARMOR['Shield']]
     },
     'druid': {
-        'gear': [GEAR['Backpack'], GEAR['Bedroll'], GEAR['Mess kit'], GEAR['Herbalism Kit'], GEAR['Rations (1 day)']],
+        'gear': [GEAR['Backpack'], GEAR['Bedroll'], GEAR['Mess kit'], GEAR['Rations (1 day)']],
         'weapons': [WEAPONS['Scimitar']],
         'armor': [ARMOR['Leather'], ARMOR['Shield']]
     },
