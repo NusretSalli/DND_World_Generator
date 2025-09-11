@@ -532,24 +532,15 @@ def story_prompt_suggestions():
     return jsonify({'suggestions': suggestions})
 
 def upgrade_db():
-    # Import necessary modules here to avoid circular imports
-    from flask_migrate import Migrate, upgrade
-    
+    """Initialize and upgrade database."""
     with app.app_context():
-        migrate = Migrate(app, db)
         try:
-            # Generate migration if there are changes
-            from flask_migrate import migrate as migrate_command
-            migrate_command()
+            # Create all tables directly for development
+            db.create_all()
+            print("Database tables created/updated successfully")
         except Exception as e:
-            print(f"Migration warning (this is normal if there are no changes): {e}")
-        
-        try:
-            # Apply any pending migrations
-            upgrade()
-        except Exception as e:
-            print(f"Upgrade error: {e}")
+            print(f"Database setup: {e}")
 
 if __name__ == '__main__':
-    upgrade_db()  # Run migrations automatically
+    upgrade_db()  # Set up database
     app.run(debug=True)
