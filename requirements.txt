@@ -2,3 +2,5 @@ Flask
 pynames
 Flask-SQLAlchemy
 Flask-Migrate
+transformers
+torch

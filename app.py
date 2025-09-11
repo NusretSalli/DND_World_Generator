@@ -11,6 +11,7 @@ from pynames.generators.russian import PaganNamesGenerator
 from pynames.generators.scandinavian import ScandinavianNamesGenerator
 import os
 from items import CLASS_EQUIPMENT
+from story import story_generator
 
 app = Flask(__name__)
 # Configure SQLAlchemy
@@ -222,6 +223,64 @@ def delete_character(character_id):
     db.session.delete(character)
     db.session.commit()
     return redirect(url_for('view_characters'))
+
+@app.route('/story')
+def story_interface():
+    """Main story interface for LLM interaction."""
+    characters = Character.query.all()
+    return render_template('story.html', characters=characters)
+
+@app.route('/generate_story', methods=['POST'])
+def generate_story():
+    """Generate story content using the LLM."""
+    try:
+        prompt = request.form.get('prompt', '').strip()
+        character_id = request.form.get('character_id')
+        encounter_type = request.form.get('encounter_type')
+        
+        if not prompt and not encounter_type:
+            return jsonify({'error': 'Please provide a story prompt or select an encounter type.'})
+        
+        character_context = ""
+        if character_id:
+            character = Character.query.get(character_id)
+            if character:
+                character_context = f"{character.name}, a level {character.level} {character.race} {character.character_class}"
+        
+        # Generate different types of content
+        if encounter_type == 'random_encounter':
+            level = 1
+            if character_id:
+                character = Character.query.get(character_id)
+                if character:
+                    level = character.level
+            story_text = story_generator.generate_encounter(character_level=level)
+        elif encounter_type == 'npc_dialogue':
+            story_text = story_generator.generate_npc_dialogue()
+        else:
+            # Regular story continuation
+            story_text = story_generator.generate_story_continuation(prompt, character_context)
+        
+        return jsonify({'story': story_text})
+        
+    except Exception as e:
+        print(f"Error generating story: {e}")
+        return jsonify({'error': 'Failed to generate story. The mystical forces are disrupted.'})
+
+@app.route('/story_prompt_suggestions')
+def story_prompt_suggestions():
+    """Get suggested story prompts."""
+    suggestions = [
+        "The party enters a mysterious tavern where something seems off...",
+        "A hooded figure approaches you on the road...",
+        "You discover an ancient ruin hidden in the forest...",
+        "The local villagers speak of strange disappearances...",
+        "A treasure map leads you to a dangerous location...",
+        "You hear rumors of a powerful artifact...",
+        "The weather suddenly changes as dark clouds gather...",
+        "You stumble upon a group of bandits arguing..."
+    ]
+    return jsonify({'suggestions': suggestions})
 
 def upgrade_db():
     # Import necessary modules here to avoid circular imports
