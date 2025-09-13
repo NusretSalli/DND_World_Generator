@@ -13,6 +13,7 @@ import os
 import json
 from items import CLASS_EQUIPMENT, ALL_ITEMS, CharacterEquipment, EquipmentSlot, ItemRarity, ItemType
 from story import story_generator
+from enemies import STANDARD_ENEMIES, get_enemy_by_name, get_random_enemy_for_level
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -543,6 +544,88 @@ class CombatAction(db.Model):
     actor = db.relationship('Combatant', foreign_keys=[actor_id], backref='actions_taken')
     target = db.relationship('Combatant', foreign_keys=[target_id], backref='actions_received')
 
+class Enemy(db.Model):
+    """
+    Database model for enemy/monster templates.
+    
+    This model stores enemy statistics and abilities for use in combat encounters.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    creature_type = db.Column(db.String(50), nullable=False)
+    size = db.Column(db.String(20), nullable=False)
+    armor_class = db.Column(db.Integer, nullable=False)
+    hit_points = db.Column(db.Integer, nullable=False)
+    speed = db.Column(db.Integer, nullable=False, default=30)
+    
+    # Ability scores
+    strength = db.Column(db.Integer, nullable=False)
+    dexterity = db.Column(db.Integer, nullable=False)
+    constitution = db.Column(db.Integer, nullable=False)
+    intelligence = db.Column(db.Integer, nullable=False)
+    wisdom = db.Column(db.Integer, nullable=False)
+    charisma = db.Column(db.Integer, nullable=False)
+    
+    # Challenge rating and XP
+    challenge_rating = db.Column(db.Float, nullable=False)
+    experience_points = db.Column(db.Integer, nullable=False)
+    
+    # Senses and special properties
+    passive_perception = db.Column(db.Integer, default=10)
+    darkvision = db.Column(db.Integer, default=0)
+    
+    # JSON fields for complex data
+    saving_throws = db.Column(db.Text)  # JSON
+    skills = db.Column(db.Text)  # JSON
+    damage_resistances = db.Column(db.Text)  # JSON
+    damage_immunities = db.Column(db.Text)  # JSON
+    condition_immunities = db.Column(db.Text)  # JSON
+    languages = db.Column(db.Text)  # JSON
+    actions = db.Column(db.Text)  # JSON
+    special_abilities = db.Column(db.Text)  # JSON
+    
+    @property
+    def strength_modifier(self):
+        return (self.strength - 10) // 2
+    
+    @property
+    def dexterity_modifier(self):
+        return (self.dexterity - 10) // 2
+    
+    @property
+    def constitution_modifier(self):
+        return (self.constitution - 10) // 2
+    
+    @property
+    def intelligence_modifier(self):
+        return (self.intelligence - 10) // 2
+    
+    @property
+    def wisdom_modifier(self):
+        return (self.wisdom - 10) // 2
+    
+    @property
+    def charisma_modifier(self):
+        return (self.charisma - 10) // 2
+    
+    def get_actions_list(self):
+        """Parse actions JSON string into list."""
+        if self.actions:
+            try:
+                return json.loads(self.actions)
+            except:
+                return []
+        return []
+    
+    def get_special_abilities_list(self):
+        """Parse special abilities JSON string into list."""
+        if self.special_abilities:
+            try:
+                return json.loads(self.special_abilities)
+            except:
+                return []
+        return []
+
 # Mapping races to pynames generators
 RACE_TO_GENERATOR = {
     'dwarf': KoreanNamesGenerator(),
@@ -556,6 +639,52 @@ RACE_TO_GENERATOR = {
     'half-elf': WarhammerNamesGenerator(),  # Using Warhammer names for half-elves
     'tiefling': PaganNamesGenerator(),
 }
+
+def populate_standard_enemies():
+    """Populate the database with standard D&D enemies."""
+    for enemy_data in STANDARD_ENEMIES.values():
+        # Check if enemy already exists
+        existing = Enemy.query.filter_by(name=enemy_data.name).first()
+        if existing:
+            continue
+            
+        enemy = Enemy(
+            name=enemy_data.name,
+            creature_type=enemy_data.creature_type.value,
+            size=enemy_data.size.value,
+            armor_class=enemy_data.armor_class,
+            hit_points=enemy_data.hit_points,
+            speed=enemy_data.speed,
+            strength=enemy_data.strength,
+            dexterity=enemy_data.dexterity,
+            constitution=enemy_data.constitution,
+            intelligence=enemy_data.intelligence,
+            wisdom=enemy_data.wisdom,
+            charisma=enemy_data.charisma,
+            challenge_rating=enemy_data.challenge_rating,
+            experience_points=enemy_data.experience_points,
+            passive_perception=enemy_data.passive_perception,
+            darkvision=enemy_data.darkvision,
+            saving_throws=json.dumps(enemy_data.saving_throws),
+            skills=json.dumps(enemy_data.skills),
+            damage_resistances=json.dumps(enemy_data.damage_resistances),
+            damage_immunities=json.dumps(enemy_data.damage_immunities),
+            condition_immunities=json.dumps(enemy_data.condition_immunities),
+            languages=json.dumps(enemy_data.languages),
+            actions=json.dumps([{
+                'name': action.name,
+                'description': action.description,
+                'attack_bonus': action.attack_bonus,
+                'damage_dice': action.damage_dice,
+                'damage_type': action.damage_type,
+                'range': action.range,
+                'recharge': action.recharge
+            } for action in enemy_data.actions]),
+            special_abilities=json.dumps(enemy_data.special_abilities)
+        )
+        db.session.add(enemy)
+    
+    db.session.commit()
 
 @app.route('/')
 def index():
@@ -879,6 +1008,7 @@ def start_combat():
             combatants.append({
                 'id': combatant.id,
                 'character_name': combatant.character.name,
+                'character_class': combatant.character.character_class,
                 'initiative': combatant.initiative,
                 'current_hp': combatant.current_hp,
                 'max_hp': combatant.character.max_hp,
@@ -911,6 +1041,7 @@ def combat_status(combat_id):
             combatants.append({
                 'id': combatant.id,
                 'character_name': combatant.character.name,
+                'character_class': combatant.character.character_class,
                 'initiative': combatant.initiative,
                 'current_hp': combatant.current_hp,
                 'max_hp': combatant.character.max_hp,
@@ -1112,20 +1243,61 @@ def death_saving_throw(combat_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# D&D 5e classes that can cast healing spells
+HEALING_CLASSES = {
+    'cleric', 'bard', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', 'artificer'
+}
+
+# Items that can be thrown and their damage/effects
+THROWABLE_ITEMS = {
+    'Acid (vial)': {'damage': '2d6', 'damage_type': 'acid', 'range': 20},
+    'Alchemist\'s fire (flask)': {'damage': '1d4', 'damage_type': 'fire', 'range': 20, 'ongoing': '1d4 fire damage at start of turn'},
+    'Holy water (flask)': {'damage': '2d6', 'damage_type': 'radiant', 'range': 20, 'condition': 'vs undead/fiends only'},
+    'Oil (flask)': {'damage': '5', 'damage_type': 'fire', 'range': 20, 'condition': 'if target takes fire damage before end of next turn'},
+    'Potion of healing': {'damage': '0', 'effect': 'heal 2d4+2 hp', 'range': 20},
+    'Dagger': {'damage': '1d4', 'damage_type': 'piercing', 'range': 60},
+    'Handaxe': {'damage': '1d6', 'damage_type': 'slashing', 'range': 60},
+    'Javelin': {'damage': '1d6', 'damage_type': 'piercing', 'range': 120},
+    'Light Hammer': {'damage': '1d4', 'damage_type': 'bludgeoning', 'range': 60},
+    'Spear': {'damage': '1d6', 'damage_type': 'piercing', 'range': 60},
+    'Dart': {'damage': '1d4', 'damage_type': 'piercing', 'range': 60},
+    'Trident': {'damage': '1d6', 'damage_type': 'piercing', 'range': 60},
+}
+
+def can_heal(character_class):
+    """Check if a character class can cast healing spells."""
+    return character_class.lower() in HEALING_CLASSES
+
+def can_throw_item(item_name):
+    """Check if an item can be thrown."""
+    return item_name in THROWABLE_ITEMS
+
+def get_throw_damage(item_name):
+    """Get throwing damage for an item."""
+    return THROWABLE_ITEMS.get(item_name, {'damage': '1', 'damage_type': 'bludgeoning', 'range': 20})
+
 @app.route('/combat/<int:combat_id>/heal', methods=['POST'])
 def heal_combatant(combat_id):
-    """Heal a combatant."""
+    """Heal a combatant (restricted to spellcasting classes only)."""
     try:
         data = request.get_json()
         combatant_id = data.get('combatant_id')
         healing = data.get('healing', 0)
+        healer_id = data.get('healer_id')  # Who is doing the healing
         
         if healing <= 0:
             return jsonify({'error': 'Healing amount must be positive'}), 400
         
         combatant = Combatant.query.get_or_404(combatant_id)
-        old_hp = combatant.current_hp
+        healer = Combatant.query.get_or_404(healer_id) if healer_id else combatant
         
+        # Check if the healer can actually cast healing spells
+        if not can_heal(healer.character.character_class):
+            return jsonify({
+                'error': f'{healer.character.character_class.title()}s cannot cast healing spells. Only spellcasters like Clerics, Bards, Druids, Paladins, Rangers, Sorcerers, Warlocks, Wizards, and Artificers can heal.'
+            }), 400
+        
+        old_hp = combatant.current_hp
         combatant.heal(healing)
         
         return jsonify({
@@ -1133,7 +1305,95 @@ def heal_combatant(combat_id):
             'old_hp': old_hp,
             'new_hp': combatant.current_hp,
             'healing_applied': combatant.current_hp - old_hp,
-            'is_conscious': combatant.is_conscious
+            'is_conscious': combatant.is_conscious,
+            'healer_name': healer.character.name
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/throw', methods=['POST'])
+def throw_item(combat_id):
+    """Throw an item at a target."""
+    try:
+        from combat import CombatEngine
+        
+        data = request.get_json()
+        thrower_id = data.get('thrower_id')
+        target_id = data.get('target_id')
+        item_id = data.get('item_id')
+        
+        if not thrower_id or not target_id or not item_id:
+            return jsonify({'error': 'Thrower, target, and item required'}), 400
+        
+        thrower = Combatant.query.get(thrower_id)
+        target = Combatant.query.get(target_id)
+        item = Item.query.get(item_id)
+        
+        if not thrower or not target or not item:
+            return jsonify({'error': 'Invalid IDs'}), 400
+        
+        if item.character_id != thrower.character_id:
+            return jsonify({'error': 'Item not owned by thrower'}), 400
+        
+        if not can_throw_item(item.name):
+            return jsonify({'error': f'{item.name} cannot be thrown'}), 400
+        
+        # Get throwing stats
+        throw_stats = get_throw_damage(item.name)
+        
+        # Calculate attack bonus (use DEX for thrown items)
+        proficiency_bonus = CombatEngine.get_proficiency_bonus(thrower.character.level)
+        attack_bonus = thrower.character.dexterity_modifier + proficiency_bonus
+        
+        # Make attack roll
+        hit, attack_roll, critical = CombatEngine.make_attack_roll(attack_bonus, target.character.armor_class)
+        
+        damage_dealt = 0
+        damage_roll = 0
+        effect_message = ""
+        
+        if hit:
+            # Parse and roll damage
+            if throw_stats['damage'] and throw_stats['damage'] != '0':
+                damage_info = CombatEngine.parse_damage_dice(throw_stats['damage'])
+                damage_roll = CombatEngine.roll_dice(damage_info.dice_count, damage_info.dice_size, damage_info.modifier)
+                
+                if critical:
+                    damage_roll = damage_roll * 2  # Simple critical damage
+                
+                # Apply damage if it's a damaging item
+                if damage_roll > 0:
+                    target.apply_damage(damage_roll)
+                    damage_dealt = damage_roll
+            
+            # Handle special effects
+            if 'effect' in throw_stats:
+                if 'heal' in throw_stats['effect']:
+                    # Healing potion thrown at target
+                    healing_amount = 0
+                    if '2d4+2' in throw_stats['effect']:
+                        healing_amount = CombatEngine.roll_dice(2, 4, 2)
+                    target.heal(healing_amount)
+                    effect_message = f" and healed for {healing_amount} HP"
+        
+        # Consume/destroy the thrown item for consumables
+        if item.item_type in ['consumable', 'gear'] and item.name in ['Acid (vial)', 'Alchemist\'s fire (flask)', 'Holy water (flask)', 'Oil (flask)', 'Potion of healing']:
+            db.session.delete(item)
+        
+        # Use action
+        thrower.has_action = False
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'hit': hit,
+            'attack_roll': attack_roll,
+            'damage': damage_dealt,
+            'damage_type': throw_stats.get('damage_type', 'bludgeoning'),
+            'critical': critical,
+            'effect_message': effect_message,
+            'item_consumed': item.name in ['Acid (vial)', 'Alchemist\'s fire (flask)', 'Holy water (flask)', 'Oil (flask)', 'Potion of healing']
         })
         
     except Exception as e:
