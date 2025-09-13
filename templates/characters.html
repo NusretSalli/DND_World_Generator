@@ -181,6 +181,42 @@
         .nav-btn:hover {
             background: #34495e;
         }
+
+        .character-actions {
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .action-btn {
+            display: inline-block;
+            background: #17a2b8;
+            color: white;
+            text-decoration: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            margin: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .action-btn:hover {
+            background: #138496;
+        }
+
+        .rarity-badge {
+            display: inline-block;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-left: 5px;
+        }
+
+        .rarity-common { background: #6c757d; color: white; }
+        .rarity-uncommon { background: #28a745; color: white; }
+        .rarity-rare { background: #007bff; color: white; }
+        .rarity-very_rare { background: #6f42c1; color: white; }
+        .rarity-legendary { background: #fd7e14; color: white; }
     </style>
 </head>
 
@@ -243,18 +279,27 @@
                     </p>
                 </div>
 
+                <div class="character-actions">
+                    <a href="{{ url_for('character_inventory', character_id=character.id) }}" class="action-btn">📦 Manage Inventory</a>
+                </div>
+
                 {% if character.inventory %}
                 <div class="inventory">
-                    <h3>Inventory</h3>
+                    <h3>Quick Inventory ({{ character.inventory|length }} items)</h3>
                     <ul>
-                        {% for item in character.inventory %}
+                        {% for item in character.inventory[:5] %}
                         <li>
                             <strong>{{ item.name }}</strong>
-                            {% if item.description %}
-                            <span class="item-description">- {{ item.description }}</span>
+                            {% if item.magical %}✨{% endif %}
+                            {% if item.equipped_slot %}(Equipped){% endif %}
+                            {% if item.rarity != 'common' %}
+                            <span class="rarity-badge rarity-{{ item.rarity }}">{{ item.rarity }}</span>
                             {% endif %}
                         </li>
                         {% endfor %}
+                        {% if character.inventory|length > 5 %}
+                        <li><em>... and {{ character.inventory|length - 5 }} more items</em></li>
+                        {% endif %}
                     </ul>
                 </div>
                 {% endif %}

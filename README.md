@@ -47,28 +47,81 @@ graph TD
     J --> K
 ```
 
-## **Setup**
+## **Setup and Installation**
 
-1. Install requirements:
+1. **Clone the repository**:
+```bash
+git clone https://github.com/NusretSalli/DND_World_Generator.git
+cd DND_World_Generator
+```
+
+2. **Create and activate a virtual environment**:
+```bash
+# Windows
+python -m venv .venv
+.\.venv\Scripts\activate
+
+# macOS/Linux
+python -m venv .venv
+source .venv/bin/activate
+```
+
+3. **Install requirements**:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Run the application:
+4. **Initialize the database**:
 ```bash
 python app.py
 ```
 
-3. Access the application at `http://localhost:5000`
+5. **Access the application**:
+   - Navigate to `http://localhost:5000` in your web browser
 
+## **Database Management**
 
-## **Checklist**
+### Working with Migrations
 
-- [x] initial character creation added
-- [x] database for character created
-- [ ] Develop character stat interaction
-- [ ] Implement enemies, creatures, etc.
-- [ ] Implement weapons, spells, dice interactions, etc.
-- [ ] Character inventory management
-- [ ] LLM narration integration
-- [ ] Map generration
+The project uses Flask-Migrate to handle database schema changes:
+
+1. **Creating a new migration** (after changing models):
+```bash
+# Windows
+$env:FLASK_APP = "app.py"
+python -m flask db migrate -m "Description of changes"
+
+# macOS/Linux
+export FLASK_APP=app.py
+python -m flask db migrate -m "Description of changes"
+```
+
+2. **Applying migrations**:
+```bash
+python -m flask db upgrade
+```
+
+3. **Resetting the database** (for major changes):
+```bash
+# Delete the database file
+rm instance/dnd_characters.db
+
+# Restart the application to create a fresh database
+python app.py
+```
+
+## **Tips & Tricks**
+
+1. **Character Creation**:
+   - Ability scores follow D&D 5e rules with modifiers
+   - HP is calculated based on class hit dice and Constitution
+   - AC incorporates Dexterity modifier automatically
+
+2. **Item Management**:
+   - Items have weight that counts toward carrying capacity
+   - Magical items can require attunement
+   - Equipment can be assigned to specific slots
+
+3. **Troubleshooting**:
+   - If you see errors about missing columns, run migrations
+   - For a clean start, delete the database file and restart
