@@ -10,6 +10,7 @@ from pynames.generators.orc import OrcNamesGenerator
 from pynames.generators.russian import PaganNamesGenerator
 from pynames.generators.scandinavian import ScandinavianNamesGenerator
 import os
+import json
 from items import CLASS_EQUIPMENT, ALL_ITEMS, CharacterEquipment, EquipmentSlot, ItemRarity, ItemType
 from story import story_generator
 
@@ -334,8 +335,213 @@ class Character(db.Model):
         return (self.strength - 10) // 2
     
     @property
+    def dexterity_modifier(self):
+        return (self.dexterity - 10) // 2
+    
+    @property
+    def constitution_modifier(self):
+        return (self.constitution - 10) // 2
+    
+    @property
+    def intelligence_modifier(self):
+        return (self.intelligence - 10) // 2
+    
+    @property
+    def wisdom_modifier(self):
+        return (self.wisdom - 10) // 2
+    
+    @property
+    def charisma_modifier(self):
+        return (self.charisma - 10) // 2
+    
+    @property
     def carrying_capacity(self):
         return self.strength * 15  # Basic carrying capacity rules
+
+# Combat System Models
+
+class Combat(db.Model):
+    """
+    Database model for combat encounters.
+    
+    Manages the overall state of a combat encounter including turn order,
+    current round, and active status.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    current_round = db.Column(db.Integer, default=1)
+    current_turn = db.Column(db.Integer, default=0)  # Index in turn order
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    # Relationships
+    combatants = db.relationship('Combatant', backref='combat', lazy=True, cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Combat {self.name}>'
+    
+    @property
+    def turn_order(self):
+        """Get combatants ordered by initiative (highest first)."""
+        return sorted(self.combatants, key=lambda c: c.initiative, reverse=True)
+    
+    @property 
+    def current_combatant(self):
+        """Get the combatant whose turn it currently is."""
+        turn_order = self.turn_order
+        if turn_order and 0 <= self.current_turn < len(turn_order):
+            return turn_order[self.current_turn]
+        return None
+    
+    def next_turn(self):
+        """Advance to the next combatant's turn."""
+        turn_order = self.turn_order
+        if turn_order:
+            self.current_turn = (self.current_turn + 1) % len(turn_order)
+            if self.current_turn == 0:  # Back to first combatant
+                self.current_round += 1
+            db.session.commit()
+
+class Combatant(db.Model):
+    """
+    Database model for combatants in a specific combat encounter.
+    
+    Links characters to combat encounters and tracks combat-specific state
+    like initiative, conditions, and temporary HP.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id'), nullable=False)
+    character_id = db.Column(db.Integer, db.ForeignKey('character.id'), nullable=False)
+    
+    # Combat state
+    initiative = db.Column(db.Integer, nullable=False)
+    current_hp = db.Column(db.Integer, nullable=False)  # Can be different from character HP
+    temp_hp = db.Column(db.Integer, default=0)
+    conditions = db.Column(db.Text)  # JSON string for status conditions
+    
+    # Death saving throws
+    death_save_successes = db.Column(db.Integer, default=0)
+    death_save_failures = db.Column(db.Integer, default=0)
+    
+    # Actions this turn
+    has_action = db.Column(db.Boolean, default=True)
+    has_bonus_action = db.Column(db.Boolean, default=True)
+    has_movement = db.Column(db.Boolean, default=True)
+    has_reaction = db.Column(db.Boolean, default=True)
+    
+    # Relationships
+    character = db.relationship('Character', backref='combatant_instances', lazy=True)
+    
+    def __repr__(self):
+        return f'<Combatant {self.character.name}>'
+    
+    @property
+    def effective_hp(self):
+        """Get total effective HP including temporary HP."""
+        return self.current_hp + self.temp_hp
+    
+    @property
+    def is_conscious(self):
+        """Check if combatant is conscious (HP > 0)."""
+        return self.current_hp > 0
+    
+    @property
+    def is_dead(self):
+        """Check if combatant is dead (3 death save failures or massive damage)."""
+        return self.death_save_failures >= 3 or self.current_hp <= -self.character.max_hp
+    
+    @property
+    def conditions_list(self):
+        """Get list of active conditions."""
+        if self.conditions:
+            import json
+            try:
+                return json.loads(self.conditions)
+            except:
+                return []
+        return []
+    
+    def add_condition(self, condition):
+        """Add a condition to the combatant."""
+        conditions = self.conditions_list
+        if condition not in conditions:
+            conditions.append(condition)
+            import json
+            self.conditions = json.dumps(conditions)
+            db.session.commit()
+    
+    def remove_condition(self, condition):
+        """Remove a condition from the combatant."""
+        conditions = self.conditions_list
+        if condition in conditions:
+            conditions.remove(condition)
+            import json
+            self.conditions = json.dumps(conditions) if conditions else None
+            db.session.commit()
+    
+    def reset_turn_actions(self):
+        """Reset actions for the start of a new turn."""
+        self.has_action = True
+        self.has_bonus_action = True
+        self.has_movement = True
+        # Reaction stays until start of next turn
+        db.session.commit()
+    
+    def apply_damage(self, damage):
+        """Apply damage to the combatant, handling temp HP."""
+        if self.temp_hp > 0:
+            if damage <= self.temp_hp:
+                self.temp_hp -= damage
+                damage = 0
+            else:
+                damage -= self.temp_hp
+                self.temp_hp = 0
+        
+        self.current_hp -= damage
+        
+        # If dropped to 0 or below, start death saves if not already dead
+        if self.current_hp <= 0 and not self.is_dead:
+            self.current_hp = 0
+            # Add unconscious condition
+            self.add_condition('unconscious')
+        
+        db.session.commit()
+    
+    def heal(self, healing):
+        """Apply healing to the combatant."""
+        if self.current_hp > 0:  # Can only heal conscious creatures
+            self.current_hp = min(self.current_hp + healing, self.character.max_hp)
+        elif self.current_hp == 0 and healing > 0:  # Revive from unconscious
+            self.current_hp = healing
+            self.death_save_successes = 0
+            self.death_save_failures = 0
+            self.remove_condition('unconscious')
+        
+        db.session.commit()
+
+class CombatAction(db.Model):
+    """
+    Database model for actions taken during combat.
+    
+    Records all actions for replay and analysis purposes.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id'), nullable=False)
+    actor_id = db.Column(db.Integer, db.ForeignKey('combatant.id'), nullable=False)
+    target_id = db.Column(db.Integer, db.ForeignKey('combatant.id'))  # Can be null for non-targeted actions
+    
+    action_type = db.Column(db.String(50), nullable=False)  # attack, dodge, dash, etc.
+    round_number = db.Column(db.Integer, nullable=False)
+    
+    # Action details (JSON)
+    action_data = db.Column(db.Text)  # weapon used, damage dealt, etc.
+    result = db.Column(db.Text)  # hit/miss, damage dealt, etc.
+    
+    timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    # Relationships
+    actor = db.relationship('Combatant', foreign_keys=[actor_id], backref='actions_taken')
+    target = db.relationship('Combatant', foreign_keys=[target_id], backref='actions_received')
 
 # Mapping races to pynames generators
 RACE_TO_GENERATOR = {
@@ -630,6 +836,360 @@ def story_prompt_suggestions():
         "You stumble upon a group of bandits arguing..."
     ]
     return jsonify({'suggestions': suggestions})
+
+# Combat API Routes
+
+@app.route('/combat/start', methods=['POST'])
+def start_combat():
+    """Start a new combat encounter."""
+    try:
+        from combat import CombatEngine
+        
+        data = request.get_json()
+        combat_name = data.get('name', 'Combat Encounter')
+        character_ids = data.get('character_ids', [])
+        
+        if not character_ids:
+            return jsonify({'error': 'No characters provided'}), 400
+        
+        # Create combat
+        combat = Combat(name=combat_name)
+        db.session.add(combat)
+        db.session.flush()  # Get the ID
+        
+        # Add combatants and roll initiative
+        for char_id in character_ids:
+            character = Character.query.get(char_id)
+            if character:
+                initiative = CombatEngine.roll_initiative(character.dexterity_modifier)
+                
+                combatant = Combatant(
+                    combat_id=combat.id,
+                    character_id=char_id,
+                    initiative=initiative,
+                    current_hp=character.current_hp
+                )
+                db.session.add(combatant)
+        
+        db.session.commit()
+        
+        # Return combat state
+        combatants = []
+        for combatant in combat.combatants:
+            combatants.append({
+                'id': combatant.id,
+                'character_name': combatant.character.name,
+                'initiative': combatant.initiative,
+                'current_hp': combatant.current_hp,
+                'max_hp': combatant.character.max_hp,
+                'ac': combatant.character.armor_class,
+                'conditions': combatant.conditions_list
+            })
+        
+        return jsonify({
+            'combat_id': combat.id,
+            'name': combat.name,
+            'round': combat.current_round,
+            'combatants': combatants,
+            'turn_order': [c['id'] for c in sorted(combatants, key=lambda x: x['initiative'], reverse=True)],
+            'current_turn': combat.current_turn
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/status')
+def combat_status(combat_id):
+    """Get current combat status."""
+    try:
+        combat = Combat.query.get_or_404(combat_id)
+        
+        combatants = []
+        for combatant in combat.combatants:
+            combatants.append({
+                'id': combatant.id,
+                'character_name': combatant.character.name,
+                'initiative': combatant.initiative,
+                'current_hp': combatant.current_hp,
+                'max_hp': combatant.character.max_hp,
+                'temp_hp': combatant.temp_hp,
+                'ac': combatant.character.armor_class,
+                'conditions': combatant.conditions_list,
+                'is_conscious': combatant.is_conscious,
+                'is_dead': combatant.is_dead,
+                'has_action': combatant.has_action,
+                'has_bonus_action': combatant.has_bonus_action,
+                'has_movement': combatant.has_movement,
+                'has_reaction': combatant.has_reaction,
+                'death_saves': {
+                    'successes': combatant.death_save_successes,
+                    'failures': combatant.death_save_failures
+                }
+            })
+        
+        current_combatant = combat.current_combatant
+        
+        return jsonify({
+            'combat_id': combat.id,
+            'name': combat.name,
+            'round': combat.current_round,
+            'is_active': combat.is_active,
+            'combatants': combatants,
+            'current_combatant_id': current_combatant.id if current_combatant else None,
+            'current_combatant_name': current_combatant.character.name if current_combatant else None
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/attack', methods=['POST'])
+def make_attack(combat_id):
+    """Make an attack action."""
+    try:
+        from combat import CombatEngine
+        
+        data = request.get_json()
+        attacker_id = data.get('attacker_id')
+        target_id = data.get('target_id') 
+        weapon_id = data.get('weapon_id')
+        
+        if not attacker_id or not target_id:
+            return jsonify({'error': 'Attacker and target required'}), 400
+        
+        attacker = Combatant.query.get(attacker_id)
+        target = Combatant.query.get(target_id)
+        
+        if not attacker or not target:
+            return jsonify({'error': 'Invalid combatant IDs'}), 400
+        
+        # Get weapon
+        weapon = None
+        if weapon_id:
+            weapon = Item.query.get(weapon_id)
+            if not weapon or weapon.character_id != attacker.character_id:
+                return jsonify({'error': 'Invalid weapon'}), 400
+        
+        # Calculate attack
+        attack_bonus = CombatEngine.calculate_weapon_attack_bonus(attacker.character, weapon)
+        target_ac = CombatEngine.calculate_ac(target.character)  # TODO: Include armor from equipped items
+        
+        hit, attack_roll, critical = CombatEngine.make_attack_roll(attack_bonus, target_ac)
+        
+        damage_dealt = 0
+        damage_roll = 0
+        damage_type = "bludgeoning"
+        
+        if hit:
+            damage_info = CombatEngine.calculate_weapon_damage(attacker.character, weapon, critical)
+            damage_roll = CombatEngine.roll_dice(damage_info.dice_count, damage_info.dice_size, damage_info.modifier)
+            damage_type = damage_info.damage_type
+            
+            # Apply damage
+            if damage_roll > 0:
+                target.apply_damage(damage_roll)
+                damage_dealt = damage_roll
+        
+        # Use action
+        attacker.has_action = False
+        db.session.commit()
+        
+        # Record the action
+        action = CombatAction(
+            combat_id=combat_id,
+            actor_id=attacker_id,
+            target_id=target_id,
+            action_type='attack',
+            round_number=Combat.query.get(combat_id).current_round,
+            action_data=json.dumps({
+                'weapon_id': weapon_id,
+                'attack_roll': attack_roll,
+                'critical': critical
+            }),
+            result=json.dumps({
+                'hit': hit,
+                'damage': damage_dealt,
+                'damage_type': damage_type
+            })
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'hit': hit,
+            'attack_roll': attack_roll,
+            'critical': critical,
+            'damage': damage_dealt,
+            'damage_type': damage_type
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/end_turn', methods=['POST'])
+def end_turn(combat_id):
+    """End the current combatant's turn."""
+    try:
+        combat = Combat.query.get(combat_id)
+        if combat:
+            current = combat.current_combatant
+            if current:
+                current.reset_turn_actions()
+            
+            combat.next_turn()
+            
+            # Reset reactions for the new turn
+            new_current = combat.current_combatant
+            if new_current:
+                new_current.has_reaction = True
+                db.session.commit()
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/death_save', methods=['POST'])
+def death_saving_throw(combat_id):
+    """Make a death saving throw."""
+    try:
+        from combat import CombatEngine
+        
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        
+        if combatant.is_conscious:
+            return jsonify({'error': 'Combatant is conscious'}), 400
+        
+        success, critical, roll = CombatEngine.make_death_saving_throw()
+        
+        if critical and success:
+            # Natural 20 - regain 1 HP
+            combatant.heal(1)
+            message = f"Natural 20! {combatant.character.name} regains consciousness with 1 HP!"
+        elif critical and not success:
+            # Natural 1 - 2 failures
+            combatant.death_save_failures += 2
+            message = f"Natural 1! {combatant.character.name} gains 2 death save failures!"
+        elif success:
+            combatant.death_save_successes += 1
+            message = f"{combatant.character.name} succeeds death save ({combatant.death_save_successes}/3)"
+        else:
+            combatant.death_save_failures += 1
+            message = f"{combatant.character.name} fails death save ({combatant.death_save_failures}/3)"
+        
+        # Check if dead
+        if combatant.death_save_failures >= 3:
+            combatant.add_condition('dead')
+            message += f" {combatant.character.name} has died!"
+        elif combatant.death_save_successes >= 3:
+            combatant.remove_condition('unconscious')
+            combatant.death_save_successes = 0
+            combatant.death_save_failures = 0
+            message += f" {combatant.character.name} stabilizes but remains unconscious!"
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'roll': roll,
+            'critical': critical,
+            'death_save_success': success,
+            'successes': combatant.death_save_successes,
+            'failures': combatant.death_save_failures,
+            'is_dead': combatant.is_dead,
+            'message': message
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/heal', methods=['POST'])
+def heal_combatant(combat_id):
+    """Heal a combatant."""
+    try:
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        healing = data.get('healing', 0)
+        
+        if healing <= 0:
+            return jsonify({'error': 'Healing amount must be positive'}), 400
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        old_hp = combatant.current_hp
+        
+        combatant.heal(healing)
+        
+        return jsonify({
+            'success': True,
+            'old_hp': old_hp,
+            'new_hp': combatant.current_hp,
+            'healing_applied': combatant.current_hp - old_hp,
+            'is_conscious': combatant.is_conscious
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/combats')
+def list_combats():
+    """List all combat encounters."""
+    try:
+        combats = Combat.query.all()
+        
+        combat_list = []
+        for combat in combats:
+            combat_list.append({
+                'id': combat.id,
+                'name': combat.name,
+                'round': combat.current_round,
+                'is_active': combat.is_active,
+                'combatant_count': len(combat.combatants),
+                'created_at': combat.created_at.isoformat() if combat.created_at else None
+            })
+        
+        return jsonify({'combats': combat_list})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat')
+def combat_page():
+    """Render the combat management page."""
+    return render_template('combat.html')
+
+@app.route('/api/characters')
+def api_characters():
+    """API endpoint to get character data as JSON."""
+    try:
+        characters = Character.query.all()
+        
+        character_list = []
+        for char in characters:
+            character_list.append({
+                'id': char.id,
+                'name': char.name,
+                'character_class': char.character_class,
+                'level': char.level,
+                'current_hp': char.current_hp,
+                'max_hp': char.max_hp,
+                'armor_class': char.armor_class,
+                'race': char.race,
+                'gender': char.gender
+            })
+        
+        return jsonify(character_list)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def upgrade_db():
     """Initialize and upgrade database."""
