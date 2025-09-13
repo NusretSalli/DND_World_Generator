@@ -15,3 +15,8 @@ migrations/
 # ignore __pycache__ folders and .pyc files
 __pycache__/
 *.pyc
+
+# ignore documentation markdown files (except README.md)
+markdown_files/
+ARCHITECTURE.md
+DOCUMENTATION.md

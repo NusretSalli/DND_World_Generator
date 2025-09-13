@@ -1,42 +1,247 @@
 # items.py
 
+from enum import Enum
+
+class ItemRarity(Enum):
+    """Item rarity levels following D&D 5E standards."""
+    COMMON = "common"
+    UNCOMMON = "uncommon"
+    RARE = "rare"
+    VERY_RARE = "very_rare"
+    LEGENDARY = "legendary"
+    ARTIFACT = "artifact"
+
+class ItemType(Enum):
+    """Item types for better categorization."""
+    WEAPON = "weapon"
+    ARMOR = "armor"
+    SHIELD = "shield"
+    GEAR = "gear"
+    TOOL = "tool"
+    CONSUMABLE = "consumable"
+    MAGIC_ITEM = "magic_item"
+    TREASURE = "treasure"
+
 class Item:
     """Base class for all items."""
-    def __init__(self, name, description, weight, value):
+    def __init__(self, name, description, weight, value, rarity=ItemRarity.COMMON, 
+                 magical=False, requires_attunement=False, tags=None):
         self.name = name
         self.description = description
         self.weight = weight
         self.value = value  # in gold pieces
+        self.rarity = rarity
+        self.magical = magical
+        self.requires_attunement = requires_attunement
+        self.tags = tags or []  # For flexible categorization
+        self.effects = []  # For storing item effects on character stats
 
     def __repr__(self):
         return f"{self.name}"
+    
+    def add_effect(self, effect_type, value, description=""):
+        """Add an effect that this item provides when equipped."""
+        self.effects.append({
+            'type': effect_type,
+            'value': value,
+            'description': description
+        })
+    
+    def get_effects_summary(self):
+        """Get a human-readable summary of item effects."""
+        if not self.effects:
+            return ""
+        return "; ".join([f"{e['type']}: {e['value']}" for e in self.effects])
 
 class Gear(Item):
     """Class for general gear."""
-    def __init__(self, name, description, weight, value):
-        super().__init__(name, description, weight, value)
-        self.item_type = 'gear'
+    def __init__(self, name, description, weight, value, rarity=ItemRarity.COMMON, 
+                 magical=False, requires_attunement=False, gear_type="miscellaneous", tags=None):
+        super().__init__(name, description, weight, value, rarity, magical, requires_attunement, tags)
+        self.item_type = ItemType.GEAR
+        self.gear_type = gear_type  # adventuring_gear, tools, consumable, etc.
 
 class Weapon(Item):
     """Class for weapons."""
-    def __init__(self, name, description, weight, value, damage, damage_type, properties=None):
-        super().__init__(name, description, weight, value)
-        self.item_type = 'weapon'
+    def __init__(self, name, description, weight, value, damage, damage_type, 
+                 rarity=ItemRarity.COMMON, magical=False, requires_attunement=False,
+                 properties=None, weapon_type="simple", tags=None):
+        super().__init__(name, description, weight, value, rarity, magical, requires_attunement, tags)
+        self.item_type = ItemType.WEAPON
         self.damage = damage
         self.damage_type = damage_type
         self.properties = properties if properties else []
+        self.weapon_type = weapon_type  # simple, martial
+        self.enchantment_bonus = 0  # For magical weapons (+1, +2, +3)
+    
+    def set_magical_bonus(self, bonus):
+        """Set magical enhancement bonus."""
+        self.enchantment_bonus = bonus
+        self.magical = True
+        if bonus > 0:
+            self.add_effect("attack_bonus", bonus, f"+{bonus} to attack and damage rolls")
+            self.add_effect("damage_bonus", bonus)
 
 class Armor(Item):
     """Class for armor and shields."""
-    def __init__(self, name, description, weight, value, base_ac, armor_type, strength_req=0, stealth_disadvantage=False):
-        super().__init__(name, description, weight, value)
-        self.item_type = 'armor'
+    def __init__(self, name, description, weight, value, base_ac, armor_type, 
+                 rarity=ItemRarity.COMMON, magical=False, requires_attunement=False,
+                 strength_req=0, stealth_disadvantage=False, tags=None):
+        super().__init__(name, description, weight, value, rarity, magical, requires_attunement, tags)
+        self.item_type = ItemType.ARMOR if armor_type != 'shield' else ItemType.SHIELD
         self.base_ac = base_ac
-        self.armor_type = armor_type  # e.g., 'light', 'medium', 'heavy', 'shield'
+        self.armor_type = armor_type  # light, medium, heavy, shield
         self.strength_req = strength_req
         self.stealth_disadvantage = stealth_disadvantage
+        self.enchantment_bonus = 0  # For magical armor (+1, +2, +3)
+    
+    def set_magical_bonus(self, bonus):
+        """Set magical enhancement bonus."""
+        self.enchantment_bonus = bonus
+        self.magical = True
+        if bonus > 0:
+            self.add_effect("ac_bonus", bonus, f"+{bonus} to AC")
+
+class MagicItem(Item):
+    """Class for magical items that don't fit other categories."""
+    def __init__(self, name, description, weight, value, rarity=ItemRarity.UNCOMMON,
+                 requires_attunement=False, charges=None, tags=None):
+        super().__init__(name, description, weight, value, rarity, magical=True, 
+                        requires_attunement=requires_attunement, tags=tags)
+        self.item_type = ItemType.MAGIC_ITEM
+        self.charges = charges  # For items with limited uses
+        self.max_charges = charges
+
+class Consumable(Item):
+    """Class for consumable items like potions, scrolls, etc."""
+    def __init__(self, name, description, weight, value, uses=1, 
+                 rarity=ItemRarity.COMMON, magical=False, tags=None):
+        super().__init__(name, description, weight, value, rarity, magical, 
+                        requires_attunement=False, tags=tags)
+        self.item_type = ItemType.CONSUMABLE
+        self.uses = uses
+        self.max_uses = uses
+
+# Equipment Slot System for Characters
+class EquipmentSlot(Enum):
+    """Equipment slots for character gear."""
+    MAIN_HAND = "main_hand"
+    OFF_HAND = "off_hand"
+    ARMOR = "armor"
+    SHIELD = "shield"
+    HELMET = "helmet"
+    GLOVES = "gloves"
+    BOOTS = "boots"
+    CLOAK = "cloak"
+    RING_1 = "ring_1"
+    RING_2 = "ring_2"
+    AMULET = "amulet"
+    BELT = "belt"
+
+class CharacterEquipment:
+    """Manages character equipment slots."""
+    def __init__(self):
+        self.slots = {slot: None for slot in EquipmentSlot}
+        self.attuned_items = []  # List of items requiring attunement
+    
+    def equip_item(self, item, slot):
+        """Equip an item to a specific slot."""
+        if slot not in self.slots:
+            return False, "Invalid equipment slot"
+        
+        # Check if slot is compatible with item type
+        if not self._is_slot_compatible(item, slot):
+            return False, f"Item {item.name} cannot be equipped to {slot.value}"
+        
+        # Check attunement requirements
+        if item.requires_attunement and len(self.attuned_items) >= 3:
+            if item not in self.attuned_items:
+                return False, "Maximum of 3 attuned items allowed"
+        
+        # Unequip current item if any
+        current_item = self.slots[slot]
+        if current_item:
+            self.unequip_item(slot)
+        
+        # Equip new item
+        self.slots[slot] = item
+        if item.requires_attunement and item not in self.attuned_items:
+            self.attuned_items.append(item)
+        
+        return True, f"Equipped {item.name} to {slot.value}"
+    
+    def unequip_item(self, slot):
+        """Unequip an item from a specific slot."""
+        item = self.slots[slot]
+        if item:
+            self.slots[slot] = None
+            if item in self.attuned_items:
+                self.attuned_items.remove(item)
+            return item
+        return None
+    
+    def _is_slot_compatible(self, item, slot):
+        """Check if an item can be equipped to a specific slot."""
+        # Handle both database Item objects and item definition objects
+        item_type_value = item.item_type
+        if hasattr(item_type_value, 'value'):
+            item_type_value = item_type_value.value
+        elif hasattr(item, 'item_type') and hasattr(item.item_type, 'value'):
+            item_type_value = item.item_type.value
+            
+        compatibility = {
+            EquipmentSlot.MAIN_HAND: ["weapon"],
+            EquipmentSlot.OFF_HAND: ["weapon", "shield"],
+            EquipmentSlot.ARMOR: ["armor"],
+            EquipmentSlot.SHIELD: ["shield"],
+            EquipmentSlot.HELMET: ["gear", "magic_item"],
+            EquipmentSlot.GLOVES: ["gear", "magic_item"],
+            EquipmentSlot.BOOTS: ["gear", "magic_item"],
+            EquipmentSlot.CLOAK: ["gear", "magic_item"],
+            EquipmentSlot.RING_1: ["gear", "magic_item"],
+            EquipmentSlot.RING_2: ["gear", "magic_item"],
+            EquipmentSlot.AMULET: ["gear", "magic_item"],
+            EquipmentSlot.BELT: ["gear", "magic_item"],
+        }
+        
+        return item_type_value in compatibility.get(slot, [])
+    
+    def get_equipped_items(self):
+        """Get all currently equipped items."""
+        return {slot: item for slot, item in self.slots.items() if item is not None}
+    
+    def get_total_ac(self, base_ac=10):
+        """Calculate total AC from equipped items."""
+        total_ac = base_ac
+        
+        # Add armor AC
+        armor = self.slots.get(EquipmentSlot.ARMOR)
+        if armor and hasattr(armor, 'base_ac') and armor.base_ac:
+            enchantment_bonus = getattr(armor, 'enchantment_bonus', 0) or 0
+            total_ac = armor.base_ac + enchantment_bonus
+        
+        # Add shield AC
+        shield = self.slots.get(EquipmentSlot.SHIELD)
+        if shield and hasattr(shield, 'base_ac') and shield.base_ac:
+            enchantment_bonus = getattr(shield, 'enchantment_bonus', 0) or 0
+            total_ac += shield.base_ac + enchantment_bonus
+        
+        # Add magical AC bonuses from other items
+        for item in self.slots.values():
+            if item and hasattr(item, 'get_effects_list'):
+                effects = item.get_effects_list()
+                for effect in effects:
+                    if isinstance(effect, dict) and effect.get('type') == 'ac_bonus':
+                        try:
+                            total_ac += int(effect['value'])
+                        except (ValueError, TypeError):
+                            continue
+        
+        return total_ac
 
 # --- Item Definitions ---
+
+# Enhanced Gear with categories
 
 # Gear
 GEAR = {
@@ -268,4 +473,81 @@ CLASS_EQUIPMENT = {
         'weapons': [WEAPONS['Quarterstaff']],
         'armor': []
     },
+}
+
+# Enhanced Weapons with magical options
+ENHANCED_WEAPONS = {
+    # Add some magical weapons as examples
+    'Longsword +1': Weapon('Longsword +1', 'A magically enhanced longsword.', 3, 315, '1d8', 'slashing', 
+                           ItemRarity.UNCOMMON, magical=True, properties=['versatile (1d10)']),
+    'Flame Tongue': Weapon('Flame Tongue', 'This magic sword\'s blade is wreathed in flames.', 3, 5000, '1d8', 'slashing',
+                          ItemRarity.RARE, magical=True, requires_attunement=True, properties=['versatile (1d10)']),
+    'Dagger of Venom': Weapon('Dagger of Venom', 'A dagger coated with magical poison.', 1, 500, '1d4', 'piercing',
+                             ItemRarity.RARE, magical=True, properties=['finesse', 'light', 'thrown (range 20/60)']),
+}
+
+# Initialize magical weapons with proper effects
+ENHANCED_WEAPONS['Longsword +1'].set_magical_bonus(1)
+ENHANCED_WEAPONS['Flame Tongue'].set_magical_bonus(1)
+ENHANCED_WEAPONS['Flame Tongue'].add_effect("fire_damage", "2d6", "Extra fire damage on critical hit")
+ENHANCED_WEAPONS['Dagger of Venom'].add_effect("poison_damage", "2d10", "Poison damage (DC 15 Constitution save)")
+
+# Magical Items
+MAGIC_ITEMS = {
+    'Ring of Protection': MagicItem('Ring of Protection', 'Grants protection to the wearer.', 0, 3500,
+                                   ItemRarity.RARE, requires_attunement=True, tags=['ring', 'protection']),
+    'Cloak of Elvenkind': MagicItem('Cloak of Elvenkind', 'Grants stealth bonuses.', 1, 5000,
+                                   ItemRarity.UNCOMMON, requires_attunement=True, tags=['cloak', 'stealth']),
+    'Bag of Holding': MagicItem('Bag of Holding', 'Extradimensional storage space.', 15, 4000,
+                               ItemRarity.UNCOMMON, tags=['storage', 'utility']),
+    'Boots of Speed': MagicItem('Boots of Speed', 'Doubles your speed for 10 minutes.', 1, 4000,
+                               ItemRarity.RARE, requires_attunement=True, charges=3, tags=['boots', 'movement']),
+}
+
+# Add effects to magical items
+MAGIC_ITEMS['Ring of Protection'].add_effect("ac_bonus", 1, "+1 to AC and saving throws")
+MAGIC_ITEMS['Ring of Protection'].add_effect("saving_throw_bonus", 1)
+MAGIC_ITEMS['Cloak of Elvenkind'].add_effect("stealth_advantage", 1, "Advantage on Dexterity (Stealth) checks")
+MAGIC_ITEMS['Bag of Holding'].add_effect("carrying_capacity", 500, "500 lbs extra carrying capacity")
+
+# Enhanced Consumables
+CONSUMABLES = {
+    'Potion of Healing': Consumable('Potion of Healing', 'Restores 2d4+2 hit points.', 0.5, 50, uses=1),
+    'Potion of Greater Healing': Consumable('Potion of Greater Healing', 'Restores 4d4+4 hit points.', 0.5, 150, 
+                                           uses=1, rarity=ItemRarity.UNCOMMON),
+    'Scroll of Fireball': Consumable('Scroll of Fireball', 'Cast fireball spell (3rd level).', 0, 150, 
+                                    uses=1, rarity=ItemRarity.UNCOMMON, magical=True),
+    'Oil of Slipperiness': Consumable('Oil of Slipperiness', 'Makes surface or creature slippery.', 0.5, 480,
+                                     uses=1, rarity=ItemRarity.UNCOMMON, magical=True),
+}
+
+# Add effects to consumables
+CONSUMABLES['Potion of Healing'].add_effect("healing", "2d4+2", "Restore hit points")
+CONSUMABLES['Potion of Greater Healing'].add_effect("healing", "4d4+4", "Restore hit points")
+
+# Enhanced Armor with magical options  
+ENHANCED_ARMOR = {
+    # Add some magical armor
+    'Leather Armor +1': Armor('Leather Armor +1', 'Magically enhanced leather armor.', 10, 160, 12, 'light',
+                              ItemRarity.UNCOMMON, magical=True),
+    'Studded Leather +2': Armor('Studded Leather +2', 'Powerfully enchanted studded leather.', 13, 1045, 14, 'light',
+                                ItemRarity.RARE, magical=True),
+    'Plate Armor of Fire Resistance': Armor('Plate Armor of Fire Resistance', 'Plate armor that protects against fire.', 65, 6500, 18, 'heavy',
+                                           ItemRarity.RARE, magical=True, requires_attunement=True, strength_req=15, stealth_disadvantage=True),
+}
+
+# Initialize magical armor with effects
+ENHANCED_ARMOR['Leather Armor +1'].set_magical_bonus(1)
+ENHANCED_ARMOR['Studded Leather +2'].set_magical_bonus(2)
+ENHANCED_ARMOR['Plate Armor of Fire Resistance'].add_effect("fire_resistance", 1, "Resistance to fire damage")
+
+# Combined item collections for easy access
+ALL_ITEMS = {
+    **GEAR,
+    **WEAPONS,
+    **ENHANCED_WEAPONS,
+    **ARMOR,
+    **ENHANCED_ARMOR,
+    **MAGIC_ITEMS,
+    **CONSUMABLES,
 }
