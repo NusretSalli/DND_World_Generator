@@ -94,10 +94,18 @@ class RuleBasedStoryGenerator:
     
     def generate_encounter(self, character_level=1, environment="forest"):
         """Generate an encounter based on level and environment."""
+        
+        # Import here to avoid circular imports
+        try:
+            from enemies import get_random_enemy_for_level, STANDARD_ENEMIES
+            enemies_available = True
+        except ImportError:
+            enemies_available = False
+        
         encounters = {
             "forest": [
                 "A pack of wolves emerges from the underbrush, their eyes gleaming in the dim light.",
-                "An ancient treant slowly awakens from its slumber, curious about the intruders.",
+                "An ancient treant slowly awakens from its slumber, curious about the intruders.", 
                 "Bandits have set up an ambush along the forest path ahead.",
                 "A wounded deer leads the party toward a hidden grove where something magical awaits."
             ],
@@ -115,8 +123,40 @@ class RuleBasedStoryGenerator:
             ]
         }
         
-        env_encounters = encounters.get(environment, encounters["forest"])
-        base_encounter = random.choice(env_encounters)
+        # Add enemy-specific encounters if enemies are available
+        if enemies_available:
+            enemy_encounters = {
+                "forest": [
+                    "A hungry wolf stalks through the trees, searching for prey.",
+                    "Bandits emerge from behind the trees, weapons drawn.",
+                    "An orc raiding party blocks the forest path ahead."
+                ],
+                "dungeon": [
+                    "A skeleton warrior guards the ancient tomb entrance.",
+                    "A pack of goblins scurries about in the shadowy chamber.",
+                    "An orc brute stands watch over a pile of stolen treasure."
+                ],
+                "city": [
+                    "A group of bandits corners you in a dark alley.",
+                    "City guards mistake you for wanted criminals.",
+                    "Kobolds have infiltrated the sewers beneath the city."
+                ]
+            }
+            
+            # 50% chance for enemy encounter with specific enemy suggestion
+            if random.random() < 0.5:
+                enemy = get_random_enemy_for_level(character_level)
+                env_encounters = enemy_encounters.get(environment, enemy_encounters["forest"])
+                base_encounter = random.choice(env_encounters)
+                
+                # Add enemy suggestion
+                base_encounter += f" (Suggested enemy: {enemy.name} - CR {enemy.challenge_rating})"
+            else:
+                env_encounters = encounters.get(environment, encounters["forest"])
+                base_encounter = random.choice(env_encounters)
+        else:
+            env_encounters = encounters.get(environment, encounters["forest"])
+            base_encounter = random.choice(env_encounters)
         
         if character_level <= 3:
             difficulty = "The situation seems manageable for a novice adventurer."
