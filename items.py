@@ -52,6 +52,78 @@ class Item:
         if not self.effects:
             return ""
         return "; ".join([f"{e['type']}: {e['value']}" for e in self.effects])
+    
+    def apply_to_character(self, character):
+        """Apply item effects to a character when equipped."""
+        for effect in self.effects:
+            if effect['type'] == 'status_effect':
+                character.apply_status_effect(
+                    effect_name=effect['value'],
+                    duration=-1,  # Permanent while equipped
+                    effect_type='item_effect',
+                    effect_data={'item_id': self.name},
+                    source_type='item',
+                    source_id=self.name
+                )
+    
+    def remove_from_character(self, character):
+        """Remove item effects from a character when unequipped."""
+        for effect in self.effects:
+            if effect['type'] == 'status_effect':
+                character.remove_status_effect(effect['value'])
+
+class Consumable(Item):
+    """Class for consumable items like potions."""
+    def __init__(self, name, description, weight, value, rarity=ItemRarity.COMMON, 
+                 effect_type="healing", effect_value="2d4+2", uses=1, tags=None):
+        super().__init__(name, description, weight, value, rarity, False, False, tags)
+        self.item_type = ItemType.CONSUMABLE
+        self.effect_type = effect_type  # healing, buff, damage, etc.
+        self.effect_value = effect_value  # dice string or numeric value
+        self.uses = uses
+        self.max_uses = uses
+    
+    def consume(self, character_or_combatant):
+        """Consume the item and apply its effects."""
+        if self.uses <= 0:
+            return False, "Item has no remaining uses"
+        
+        self.uses -= 1
+        
+        if self.effect_type == "healing":
+            # Parse healing dice
+            from combat import CombatEngine
+            if isinstance(self.effect_value, str) and 'd' in self.effect_value:
+                damage_info = CombatEngine.parse_damage_dice(self.effect_value)
+                healing = CombatEngine.roll_dice(damage_info.dice_count, damage_info.dice_size, damage_info.modifier)
+            else:
+                healing = int(self.effect_value)
+            
+            if hasattr(character_or_combatant, 'heal'):
+                # It's a combatant
+                character_or_combatant.heal(healing)
+            else:
+                # It's a character
+                character_or_combatant.current_hp = min(
+                    character_or_combatant.current_hp + healing,
+                    character_or_combatant.max_hp
+                )
+            
+            return True, f"Healed for {healing} HP"
+        
+        elif self.effect_type == "buff":
+            # Apply status effect
+            if hasattr(character_or_combatant, 'apply_status_effect'):
+                character_or_combatant.apply_status_effect(
+                    effect_name=self.effect_value,
+                    duration=10,  # 10 rounds default
+                    effect_type='buff',
+                    source_type='item',
+                    source_id=self.name
+                )
+                return True, f"Applied {self.effect_value} effect"
+        
+        return False, "Unknown effect type"
 
 class Gear(Item):
     """Class for general gear."""
@@ -65,13 +137,14 @@ class Weapon(Item):
     """Class for weapons."""
     def __init__(self, name, description, weight, value, damage, damage_type, 
                  rarity=ItemRarity.COMMON, magical=False, requires_attunement=False,
-                 properties=None, weapon_type="simple", tags=None):
+                 properties=None, weapon_type="simple", weapon_range=5, tags=None):
         super().__init__(name, description, weight, value, rarity, magical, requires_attunement, tags)
         self.item_type = ItemType.WEAPON
         self.damage = damage
         self.damage_type = damage_type
         self.properties = properties if properties else []
         self.weapon_type = weapon_type  # simple, martial
+        self.weapon_range = weapon_range  # Range in feet
         self.enchantment_bonus = 0  # For magical weapons (+1, +2, +3)
     
     def set_magical_bonus(self, bonus):
@@ -81,6 +154,14 @@ class Weapon(Item):
         if bonus > 0:
             self.add_effect("attack_bonus", bonus, f"+{bonus} to attack and damage rolls")
             self.add_effect("damage_bonus", bonus)
+    
+    def is_ranged(self):
+        """Check if this is a ranged weapon."""
+        return self.weapon_range > 5 or 'ranged' in [p.lower() for p in self.properties]
+    
+    def is_thrown(self):
+        """Check if this weapon has the thrown property."""
+        return any('thrown' in p.lower() for p in self.properties)
 
 class Armor(Item):
     """Class for armor and shields."""
@@ -341,49 +422,49 @@ GEAR = {
 # Weapons
 WEAPONS = {
     # Simple Melee
-    'Club': Weapon('Club', 'A simple wooden club.', 2, 0.1, '1d4', 'bludgeoning'),
-    'Dagger': Weapon('Dagger', 'A simple dagger.', 1, 2, '1d4', 'piercing', ['finesse', 'light', 'thrown (range 20/60)']),
-    'Greatclub': Weapon('Greatclub', 'A two-handed wooden club.', 10, 0.2, '1d8', 'bludgeoning', ['two-handed']),
-    'Handaxe': Weapon('Handaxe', 'Can be used as a melee or thrown weapon.', 2, 5, '1d6', 'slashing', ['light', 'thrown (range 20/60)']),
-    'Javelin': Weapon('Javelin', 'A light spear designed for throwing.', 2, 0.5, '1d6', 'piercing', ['thrown (range 30/120)']),
-    'Light Hammer': Weapon('Light Hammer', 'Can be used as a melee or thrown weapon.', 2, 2, '1d4', 'bludgeoning', ['light', 'thrown (range 20/60)']),
-    'Mace': Weapon('Mace', 'A blunt weapon with a heavy head.', 4, 5, '1d6', 'bludgeoning'),
-    'Quarterstaff': Weapon('Quarterstaff', 'A wooden staff.', 4, 0.2, '1d6', 'bludgeoning', ['versatile (1d8)']),
-    'Sickle': Weapon('Sickle', 'A curved blade.', 2, 1, '1d4', 'slashing', ['light']),
-    'Spear': Weapon('Spear', 'A pole weapon with a pointed head.', 3, 1, '1d6', 'piercing', ['thrown (range 20/60)', 'versatile (1d8)']),
+    'Club': Weapon('Club', 'A simple wooden club.', 2, 0.1, '1d4', 'bludgeoning', weapon_range=5),
+    'Dagger': Weapon('Dagger', 'A simple dagger.', 1, 2, '1d4', 'piercing', properties=['finesse', 'light', 'thrown (range 20/60)'], weapon_range=5),
+    'Greatclub': Weapon('Greatclub', 'A two-handed wooden club.', 10, 0.2, '1d8', 'bludgeoning', properties=['two-handed'], weapon_range=5),
+    'Handaxe': Weapon('Handaxe', 'Can be used as a melee or thrown weapon.', 2, 5, '1d6', 'slashing', properties=['light', 'thrown (range 20/60)'], weapon_range=5),
+    'Javelin': Weapon('Javelin', 'A light spear designed for throwing.', 2, 0.5, '1d6', 'piercing', properties=['thrown (range 30/120)'], weapon_range=5),
+    'Light Hammer': Weapon('Light Hammer', 'Can be used as a melee or thrown weapon.', 2, 2, '1d4', 'bludgeoning', properties=['light', 'thrown (range 20/60)'], weapon_range=5),
+    'Mace': Weapon('Mace', 'A blunt weapon with a heavy head.', 4, 5, '1d6', 'bludgeoning', weapon_range=5),
+    'Quarterstaff': Weapon('Quarterstaff', 'A wooden staff.', 4, 0.2, '1d6', 'bludgeoning', properties=['versatile (1d8)'], weapon_range=5),
+    'Sickle': Weapon('Sickle', 'A curved blade.', 2, 1, '1d4', 'slashing', properties=['light'], weapon_range=5),
+    'Spear': Weapon('Spear', 'A pole weapon with a pointed head.', 3, 1, '1d6', 'piercing', properties=['thrown (range 20/60)', 'versatile (1d8)'], weapon_range=5),
 
     # Simple Ranged
-    'Light Crossbow': Weapon('Light Crossbow', 'A simple crossbow.', 5, 25, '1d8', 'piercing', ['ammunition (range 80/320)', 'loading', 'two-handed']),
-    'Dart': Weapon('Dart', 'A small, thrown projectile.', 0.25, 0.05, '1d4', 'piercing', ['finesse', 'thrown (range 20/60)']),
-    'Shortbow': Weapon('Shortbow', 'A small bow.', 2, 25, '1d6', 'piercing', ['ammunition (range 80/320)', 'two-handed']),
-    'Sling': Weapon('Sling', 'A simple ranged weapon.', 0, 0.1, '1d4', 'bludgeoning', ['ammunition (range 30/120)']),
+    'Light Crossbow': Weapon('Light Crossbow', 'A simple crossbow.', 5, 25, '1d8', 'piercing', properties=['ammunition (range 80/320)', 'loading', 'two-handed'], weapon_range=80),
+    'Dart': Weapon('Dart', 'A small, thrown projectile.', 0.25, 0.05, '1d4', 'piercing', properties=['finesse', 'thrown (range 20/60)'], weapon_range=20),
+    'Shortbow': Weapon('Shortbow', 'A small bow.', 2, 25, '1d6', 'piercing', properties=['ammunition (range 80/320)', 'two-handed'], weapon_range=80),
+    'Sling': Weapon('Sling', 'A simple ranged weapon.', 0, 0.1, '1d4', 'bludgeoning', properties=['ammunition (range 30/120)'], weapon_range=30),
 
     # Martial Melee
-    'Battleaxe': Weapon('Battleaxe', 'A powerful axe.', 4, 10, '1d8', 'slashing', ['versatile (1d10)']),
-    'Flail': Weapon('Flail', 'A weapon with a striking head attached to a handle by a flexible chain.', 2, 10, '1d8', 'bludgeoning'),
-    'Glaive': Weapon('Glaive', 'A polearm with a single-edged blade on the end.', 6, 20, '1d10', 'slashing', ['heavy', 'reach', 'two-handed']),
-    'Greataxe': Weapon('Greataxe', 'A large, two-handed axe.', 7, 30, '1d12', 'slashing', ['heavy', 'two-handed']),
-    'Greatsword': Weapon('Greatsword', 'A large two-handed sword.', 6, 50, '2d6', 'slashing', ['heavy', 'two-handed']),
-    'Halberd': Weapon('Halberd', 'A two-handed pole weapon.', 6, 20, '1d10', 'slashing', ['heavy', 'reach', 'two-handed']),
-    'Lance': Weapon('Lance', 'A long weapon for use on horseback.', 6, 10, '1d12', 'piercing', ['reach', 'special']),
-    'Longsword': Weapon('Longsword', 'A versatile and widely used sword.', 3, 15, '1d8', 'slashing', ['versatile (1d10)']),
-    'Maul': Weapon('Maul', 'A massive hammer.', 10, 10, '2d6', 'bludgeoning', ['heavy', 'two-handed']),
-    'Morningstar': Weapon('Morningstar', 'A spiked club.', 4, 15, '1d8', 'piercing'),
-    'Pike': Weapon('Pike', 'A very long spear.', 18, 5, '1d10', 'piercing', ['heavy', 'reach', 'two-handed']),
-    'Rapier': Weapon('Rapier', 'A thin, light sword for thrusting.', 2, 25, '1d8', 'piercing', ['finesse']),
-    'Scimitar': Weapon('Scimitar', 'A curved, single-edged sword.', 3, 25, '1d6', 'slashing', ['finesse', 'light']),
-    'Shortsword': Weapon('Shortsword', 'A light, double-edged sword.', 2, 10, '1d6', 'piercing', ['finesse', 'light']),
-    'Trident': Weapon('Trident', 'A three-pronged spear.', 4, 5, '1d6', 'piercing', ['thrown (range 20/60)', 'versatile (1d8)']),
-    'War pick': Weapon('War pick', 'A pointed weapon for piercing armor.', 2, 5, '1d8', 'piercing'),
-    'Warhammer': Weapon('Warhammer', 'A heavy hammer for combat.', 2, 15, '1d8', 'bludgeoning', ['versatile (1d10)']),
-    'Whip': Weapon('Whip', 'A flexible weapon.', 3, 2, '1d4', 'slashing', ['finesse', 'reach']),
+    'Battleaxe': Weapon('Battleaxe', 'A powerful axe.', 4, 10, '1d8', 'slashing', properties=['versatile (1d10)'], weapon_type='martial', weapon_range=5),
+    'Flail': Weapon('Flail', 'A weapon with a striking head attached to a handle by a flexible chain.', 2, 10, '1d8', 'bludgeoning', weapon_type='martial', weapon_range=5),
+    'Glaive': Weapon('Glaive', 'A polearm with a single-edged blade on the end.', 6, 20, '1d10', 'slashing', properties=['heavy', 'reach', 'two-handed'], weapon_type='martial', weapon_range=10),
+    'Greataxe': Weapon('Greataxe', 'A large, two-handed axe.', 7, 30, '1d12', 'slashing', properties=['heavy', 'two-handed'], weapon_type='martial', weapon_range=5),
+    'Greatsword': Weapon('Greatsword', 'A large two-handed sword.', 6, 50, '2d6', 'slashing', properties=['heavy', 'two-handed'], weapon_type='martial', weapon_range=5),
+    'Halberd': Weapon('Halberd', 'A two-handed pole weapon.', 6, 20, '1d10', 'slashing', properties=['heavy', 'reach', 'two-handed'], weapon_type='martial', weapon_range=10),
+    'Lance': Weapon('Lance', 'A long weapon for use on horseback.', 6, 10, '1d12', 'piercing', properties=['reach', 'special'], weapon_type='martial', weapon_range=10),
+    'Longsword': Weapon('Longsword', 'A versatile and widely used sword.', 3, 15, '1d8', 'slashing', properties=['versatile (1d10)'], weapon_type='martial', weapon_range=5),
+    'Maul': Weapon('Maul', 'A massive hammer.', 10, 10, '2d6', 'bludgeoning', properties=['heavy', 'two-handed'], weapon_type='martial', weapon_range=5),
+    'Morningstar': Weapon('Morningstar', 'A spiked club.', 4, 15, '1d8', 'piercing', weapon_type='martial', weapon_range=5),
+    'Pike': Weapon('Pike', 'A very long spear.', 18, 5, '1d10', 'piercing', properties=['heavy', 'reach', 'two-handed'], weapon_type='martial', weapon_range=10),
+    'Rapier': Weapon('Rapier', 'A thin, light sword for thrusting.', 2, 25, '1d8', 'piercing', properties=['finesse'], weapon_type='martial', weapon_range=5),
+    'Scimitar': Weapon('Scimitar', 'A curved, single-edged sword.', 3, 25, '1d6', 'slashing', properties=['finesse', 'light'], weapon_type='martial', weapon_range=5),
+    'Shortsword': Weapon('Shortsword', 'A light, double-edged sword.', 2, 10, '1d6', 'piercing', properties=['finesse', 'light'], weapon_type='martial', weapon_range=5),
+    'Trident': Weapon('Trident', 'A three-pronged spear.', 4, 5, '1d6', 'piercing', properties=['thrown (range 20/60)', 'versatile (1d8)'], weapon_type='martial', weapon_range=5),
+    'War pick': Weapon('War pick', 'A pointed weapon for piercing armor.', 2, 5, '1d8', 'piercing', weapon_type='martial', weapon_range=5),
+    'Warhammer': Weapon('Warhammer', 'A heavy hammer for combat.', 2, 15, '1d8', 'bludgeoning', properties=['versatile (1d10)'], weapon_type='martial', weapon_range=5),
+    'Whip': Weapon('Whip', 'A flexible weapon.', 3, 2, '1d4', 'slashing', properties=['finesse', 'reach'], weapon_type='martial', weapon_range=10),
 
     # Martial Ranged
-    'Blowgun': Weapon('Blowgun', 'A tube for shooting darts.', 1, 10, '1', 'piercing', ['ammunition (range 25/100)', 'loading']),
-    'Hand Crossbow': Weapon('Hand Crossbow', 'A small crossbow that can be used with one hand.', 3, 75, '1d6', 'piercing', ['ammunition (range 30/120)', 'light', 'loading']),
-    'Heavy Crossbow': Weapon('Heavy Crossbow', 'A powerful crossbow.', 18, 50, '1d10', 'piercing', ['ammunition (range 100/400)', 'heavy', 'loading', 'two-handed']),
-    'Longbow': Weapon('Longbow', 'A large, powerful bow.', 2, 50, '1d8', 'piercing', ['ammunition (range 150/600)', 'heavy', 'two-handed']),
-    'Net': Weapon('Net', 'A net for entangling creatures.', 3, 1, '', '', ['special', 'thrown (range 5/15)']),
+    'Blowgun': Weapon('Blowgun', 'A tube for shooting darts.', 1, 10, '1', 'piercing', properties=['ammunition (range 25/100)', 'loading'], weapon_type='martial', weapon_range=25),
+    'Hand Crossbow': Weapon('Hand Crossbow', 'A small crossbow that can be used with one hand.', 3, 75, '1d6', 'piercing', properties=['ammunition (range 30/120)', 'light', 'loading'], weapon_type='martial', weapon_range=30),
+    'Heavy Crossbow': Weapon('Heavy Crossbow', 'A powerful crossbow.', 18, 50, '1d10', 'piercing', properties=['ammunition (range 100/400)', 'heavy', 'loading', 'two-handed'], weapon_type='martial', weapon_range=100),
+    'Longbow': Weapon('Longbow', 'A large, powerful bow.', 2, 50, '1d8', 'piercing', properties=['ammunition (range 150/600)', 'heavy', 'two-handed'], weapon_type='martial', weapon_range=150),
+    'Net': Weapon('Net', 'A net for entangling creatures.', 3, 1, '', '', properties=['special', 'thrown (range 5/15)'], weapon_type='martial', weapon_range=5),
 }
 
 # Armor
@@ -510,15 +591,15 @@ MAGIC_ITEMS['Ring of Protection'].add_effect("saving_throw_bonus", 1)
 MAGIC_ITEMS['Cloak of Elvenkind'].add_effect("stealth_advantage", 1, "Advantage on Dexterity (Stealth) checks")
 MAGIC_ITEMS['Bag of Holding'].add_effect("carrying_capacity", 500, "500 lbs extra carrying capacity")
 
-# Enhanced Consumables
+# Enhanced consumables
 CONSUMABLES = {
     'Potion of Healing': Consumable('Potion of Healing', 'Restores 2d4+2 hit points.', 0.5, 50, uses=1),
     'Potion of Greater Healing': Consumable('Potion of Greater Healing', 'Restores 4d4+4 hit points.', 0.5, 150, 
-                                           uses=1, rarity=ItemRarity.UNCOMMON),
+                                           rarity=ItemRarity.UNCOMMON, uses=1),
     'Scroll of Fireball': Consumable('Scroll of Fireball', 'Cast fireball spell (3rd level).', 0, 150, 
-                                    uses=1, rarity=ItemRarity.UNCOMMON, magical=True),
+                                    rarity=ItemRarity.UNCOMMON, uses=1),
     'Oil of Slipperiness': Consumable('Oil of Slipperiness', 'Makes surface or creature slippery.', 0.5, 480,
-                                     uses=1, rarity=ItemRarity.UNCOMMON, magical=True),
+                                     rarity=ItemRarity.UNCOMMON, uses=1),
 }
 
 # Add effects to consumables
@@ -541,6 +622,218 @@ ENHANCED_ARMOR['Leather Armor +1'].set_magical_bonus(1)
 ENHANCED_ARMOR['Studded Leather +2'].set_magical_bonus(2)
 ENHANCED_ARMOR['Plate Armor of Fire Resistance'].add_effect("fire_resistance", 1, "Resistance to fire damage")
 
+# Status Effects Library
+STATUS_EFFECTS_LIBRARY = {
+    # Conditions from D&D 5e
+    'blinded': {
+        'name': 'Blinded',
+        'description': 'A blinded creature can\'t see and automatically fails any ability check that requires sight.',
+        'effects': ['attack_disadvantage', 'spell_attack_disadvantage'],
+        'duration_type': 'rounds'
+    },
+    'charmed': {
+        'name': 'Charmed',
+        'description': 'A charmed creature can\'t attack the charmer or target the charmer with harmful abilities.',
+        'effects': ['charmer_immunity'],
+        'duration_type': 'rounds'
+    },
+    'deafened': {
+        'name': 'Deafened',
+        'description': 'A deafened creature can\'t hear and automatically fails any ability check that requires hearing.',
+        'effects': ['hearing_check_failure'],
+        'duration_type': 'rounds'
+    },
+    'frightened': {
+        'name': 'Frightened',
+        'description': 'A frightened creature has disadvantage on ability checks and attack rolls while the source of its fear is within line of sight.',
+        'effects': ['attack_disadvantage', 'ability_check_disadvantage'],
+        'duration_type': 'rounds'
+    },
+    'grappled': {
+        'name': 'Grappled',
+        'description': 'A grappled creature\'s speed becomes 0, and it can\'t benefit from any bonus to its speed.',
+        'effects': ['speed_zero'],
+        'duration_type': 'rounds'
+    },
+    'incapacitated': {
+        'name': 'Incapacitated',
+        'description': 'An incapacitated creature can\'t take actions or reactions.',
+        'effects': ['no_actions', 'no_reactions'],
+        'duration_type': 'rounds'
+    },
+    'invisible': {
+        'name': 'Invisible',
+        'description': 'An invisible creature is impossible to see without the aid of magic or a special sense.',
+        'effects': ['attack_advantage', 'stealth_advantage', 'enemy_attack_disadvantage'],
+        'duration_type': 'rounds'
+    },
+    'paralyzed': {
+        'name': 'Paralyzed',
+        'description': 'A paralyzed creature is incapacitated and can\'t move or speak.',
+        'effects': ['incapacitated', 'speed_zero', 'auto_fail_str_dex_saves', 'critical_hits_within_5ft'],
+        'duration_type': 'rounds'
+    },
+    'petrified': {
+        'name': 'Petrified',
+        'description': 'A petrified creature is transformed into a solid inanimate substance.',
+        'effects': ['incapacitated', 'speed_zero', 'damage_resistance_all', 'poison_disease_immunity'],
+        'duration_type': 'permanent'
+    },
+    'poisoned': {
+        'name': 'Poisoned',
+        'description': 'A poisoned creature has disadvantage on attack rolls and ability checks.',
+        'effects': ['attack_disadvantage', 'ability_check_disadvantage'],
+        'duration_type': 'rounds'
+    },
+    'prone': {
+        'name': 'Prone',
+        'description': 'A prone creature\'s only movement option is to crawl, and it has disadvantage on attack rolls.',
+        'effects': ['attack_disadvantage', 'melee_attacks_advantage_against', 'ranged_attacks_disadvantage_against'],
+        'duration_type': 'until_action'
+    },
+    'restrained': {
+        'name': 'Restrained',
+        'description': 'A restrained creature\'s speed becomes 0, and it has disadvantage on attack rolls and Dexterity saving throws.',
+        'effects': ['speed_zero', 'attack_disadvantage', 'dex_save_disadvantage', 'attacks_advantage_against'],
+        'duration_type': 'rounds'
+    },
+    'stunned': {
+        'name': 'Stunned',
+        'description': 'A stunned creature is incapacitated, can\'t move, and can speak only falteringly.',
+        'effects': ['incapacitated', 'speed_zero', 'auto_fail_str_dex_saves', 'attacks_advantage_against'],
+        'duration_type': 'rounds'
+    },
+    'unconscious': {
+        'name': 'Unconscious',
+        'description': 'An unconscious creature is incapacitated, can\'t move or speak, and is unaware of its surroundings.',
+        'effects': ['incapacitated', 'speed_zero', 'prone', 'auto_fail_str_dex_saves', 'critical_hits_within_5ft'],
+        'duration_type': 'until_healed'
+    },
+    
+    # Additional status effects for items and spells
+    'blessed': {
+        'name': 'Blessed',
+        'description': 'Blessed creatures gain a bonus to attack rolls and saving throws.',
+        'effects': ['attack_bonus_1d4', 'saving_throw_bonus_1d4'],
+        'duration_type': 'minutes'
+    },
+    'haste': {
+        'name': 'Haste',
+        'description': 'Double speed, +2 AC, advantage on Dex saves, additional action.',
+        'effects': ['speed_double', 'ac_bonus_2', 'dex_save_advantage', 'extra_action'],
+        'duration_type': 'minutes'
+    },
+    'slow': {
+        'name': 'Slow',
+        'description': 'Speed halved, -2 AC, disadvantage on Dex saves, limited actions.',
+        'effects': ['speed_half', 'ac_penalty_2', 'dex_save_disadvantage', 'limited_actions'],
+        'duration_type': 'minutes'
+    },
+    'bear_strength': {
+        'name': 'Bear\'s Strength',
+        'description': 'Strength becomes 21 for the duration.',
+        'effects': ['strength_21'],
+        'duration_type': 'hours'
+    },
+    'cat_grace': {
+        'name': 'Cat\'s Grace',
+        'description': 'Dexterity becomes 21 for the duration.',
+        'effects': ['dexterity_21'],
+        'duration_type': 'hours'
+    },
+    'bull_endurance': {
+        'name': 'Bull\'s Endurance',
+        'description': 'Constitution becomes 21 for the duration.',
+        'effects': ['constitution_21'],
+        'duration_type': 'hours'
+    },
+    'regeneration': {
+        'name': 'Regeneration',
+        'description': 'Regain hit points at the start of each turn.',
+        'effects': ['heal_1_per_turn'],
+        'duration_type': 'minutes'
+    },
+    'fire_resistance': {
+        'name': 'Fire Resistance',
+        'description': 'Take half damage from fire sources.',
+        'effects': ['fire_damage_resistance'],
+        'duration_type': 'hours'
+    },
+    'cold_resistance': {
+        'name': 'Cold Resistance',
+        'description': 'Take half damage from cold sources.',
+        'effects': ['cold_damage_resistance'],
+        'duration_type': 'hours'
+    },
+    'magic_weapon': {
+        'name': 'Magic Weapon',
+        'description': 'Weapon becomes magical with +1 bonus.',
+        'effects': ['weapon_magical', 'weapon_bonus_1'],
+        'duration_type': 'hours'
+    },
+    'shield_of_faith': {
+        'name': 'Shield of Faith',
+        'description': 'Gain +2 bonus to AC.',
+        'effects': ['ac_bonus_2'],
+        'duration_type': 'minutes'
+    },
+    'barkskin': {
+        'name': 'Barkskin',
+        'description': 'AC becomes at least 16.',
+        'effects': ['ac_minimum_16'],
+        'duration_type': 'hours'
+    }
+}
+
+# Potion effects
+POTION_EFFECTS = {
+    'Potion of Healing': {
+        'effect_type': 'healing',
+        'value': '2d4+2',
+        'description': 'Restores 2d4+2 hit points when consumed.'
+    },
+    'Potion of Greater Healing': {
+        'effect_type': 'healing',
+        'value': '4d4+4',
+        'description': 'Restores 4d4+4 hit points when consumed.'
+    },
+    'Potion of Superior Healing': {
+        'effect_type': 'healing',
+        'value': '8d4+8',
+        'description': 'Restores 8d4+8 hit points when consumed.'
+    },
+    'Potion of Fire Resistance': {
+        'effect_type': 'status_effect',
+        'value': 'fire_resistance',
+        'duration': 60,  # 1 hour
+        'description': 'Grants resistance to fire damage for 1 hour.'
+    },
+    'Potion of Strength': {
+        'effect_type': 'status_effect',
+        'value': 'bear_strength',
+        'duration': 60,  # 1 hour
+        'description': 'Sets Strength to 21 for 1 hour.'
+    },
+    'Potion of Speed': {
+        'effect_type': 'status_effect',
+        'value': 'haste',
+        'duration': 10,  # 1 minute
+        'description': 'Effects of haste spell for 1 minute.'
+    }
+}
+
+# Create enhanced consumables with proper effects
+ENHANCED_CONSUMABLES = {
+    'Potion of Superior Healing': Consumable('Potion of Superior Healing', 'Restores 8d4+8 hit points.', 0.5, 500, 
+                                           ItemRarity.RARE, "healing", "8d4+8", 1),
+    'Potion of Fire Resistance': Consumable('Potion of Fire Resistance', 'Grants resistance to fire damage for 1 hour.', 0.5, 300,
+                                           ItemRarity.UNCOMMON, "buff", "fire_resistance", 1),
+    'Potion of Strength': Consumable('Potion of Strength', 'Sets Strength to 21 for 1 hour.', 0.5, 400,
+                                    ItemRarity.UNCOMMON, "buff", "bear_strength", 1),
+    'Potion of Speed': Consumable('Potion of Speed', 'Effects of haste spell for 1 minute.', 0.5, 400,
+                                 ItemRarity.RARE, "buff", "haste", 1),
+}
+
 # Combined item collections for easy access
 ALL_ITEMS = {
     **GEAR,
@@ -550,4 +843,5 @@ ALL_ITEMS = {
     **ENHANCED_ARMOR,
     **MAGIC_ITEMS,
     **CONSUMABLES,
+    **ENHANCED_CONSUMABLES,
 }

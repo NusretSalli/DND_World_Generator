@@ -358,6 +358,141 @@ class Character(db.Model):
     @property
     def carrying_capacity(self):
         return self.strength * 15  # Basic carrying capacity rules
+    
+    @property
+    def movement_speed(self):
+        """Get character movement speed in feet."""
+        # Base speed by race (simplified - in a full system this would be race-specific)
+        base_speeds = {
+            'dwarf': 25,
+            'halfling': 25,
+            'gnome': 25,
+            'dragonborn': 30,
+            'elf': 30,
+            'half-elf': 30,
+            'half-orc': 30,
+            'human': 30,
+            'tiefling': 30
+        }
+        return base_speeds.get(self.race.lower(), 30)
+    
+    @property
+    def experience_to_next_level(self):
+        """Calculate experience needed for next level."""
+        # D&D 5e experience table
+        xp_table = {
+            1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500,
+            6: 14000, 7: 23000, 8: 34000, 9: 48000, 10: 64000,
+            11: 85000, 12: 100000, 13: 120000, 14: 140000, 15: 165000,
+            16: 195000, 17: 225000, 18: 265000, 19: 305000, 20: 355000
+        }
+        
+        if self.level >= 20:
+            return 0  # Max level
+        
+        next_level_xp = xp_table.get(self.level + 1, 355000)
+        return next_level_xp - self.experience
+    
+    def gain_experience(self, xp_amount):
+        """
+        Add experience points and handle level-ups.
+        
+        Args:
+            xp_amount (int): Experience points to add
+            
+        Returns:
+            dict: Information about any level-ups that occurred
+        """
+        old_level = self.level
+        self.experience += xp_amount
+        
+        # Check for level-ups
+        level_ups = 0
+        while self.can_level_up():
+            self.level_up()
+            level_ups += 1
+        
+        db.session.commit()
+        
+        return {
+            'xp_gained': xp_amount,
+            'new_total_xp': self.experience,
+            'old_level': old_level,
+            'new_level': self.level,
+            'levels_gained': level_ups
+        }
+    
+    def can_level_up(self):
+        """Check if character has enough XP to level up."""
+        return self.experience_to_next_level <= 0 and self.level < 20
+    
+    def level_up(self):
+        """Level up the character, increasing stats appropriately."""
+        if not self.can_level_up():
+            return False
+        
+        old_level = self.level
+        self.level += 1
+        
+        # Increase HP (average of hit die + CON modifier)
+        class_hit_dice = {
+            'barbarian': 12,
+            'fighter': 10, 'paladin': 10, 'ranger': 10,
+            'bard': 8, 'cleric': 8, 'druid': 8, 'monk': 8, 'rogue': 8, 'warlock': 8,
+            'sorcerer': 6, 'wizard': 6
+        }
+        
+        hit_die = class_hit_dice.get(self.character_class.lower(), 8)
+        hp_increase = (hit_die // 2 + 1) + self.constitution_modifier  # Average + CON mod
+        hp_increase = max(1, hp_increase)  # Minimum 1 HP per level
+        
+        self.max_hp += hp_increase
+        self.current_hp += hp_increase  # Heal to new max when leveling
+        
+        # Update proficiency bonus (affects AC calculation for some classes)
+        # For simplicity, we'll recalculate AC based on new proficiency
+        base_ac = 10 + self.dexterity_modifier
+        self.armor_class = max(self.armor_class, base_ac)
+        
+        return True
+    
+    def apply_status_effect(self, effect_name, duration=1, effect_type='condition', effect_data=None, source_type=None, source_id=None):
+        """
+        Apply a status effect to the character.
+        
+        Args:
+            effect_name (str): Name of the effect
+            duration (int): Duration in rounds/minutes/hours
+            effect_type (str): Type of effect ('condition', 'stat_modifier', etc.)
+            effect_data (dict): Additional effect parameters
+            source_type (str): Source of effect ('spell', 'item', etc.)
+            source_id (int): ID of the source
+        """
+        # Check if effect already exists
+        existing_effect = StatusEffect.query.filter_by(
+            combatant_id=None,  # We'll need to adapt this for character vs combatant
+            name=effect_name
+        ).first()
+        
+        if existing_effect:
+            # Refresh duration for existing effect
+            existing_effect.duration_remaining = max(existing_effect.duration_remaining, duration)
+        else:
+            # Create new effect
+            effect = StatusEffect(
+                combatant_id=None,  # This will need to be set when in combat
+                name=effect_name,
+                description=f"Status effect: {effect_name}",
+                duration_type='rounds',
+                duration_remaining=duration,
+                effect_type=effect_type,
+                effect_data=json.dumps(effect_data) if effect_data else None,
+                source_type=source_type,
+                source_id=source_id
+            )
+            db.session.add(effect)
+        
+        db.session.commit()
 
 # Combat System Models
 
@@ -398,10 +533,89 @@ class Combat(db.Model):
         """Advance to the next combatant's turn."""
         turn_order = self.turn_order
         if turn_order:
+            # Tick status effects for current combatant
+            current = self.current_combatant
+            if current:
+                current.tick_status_effects()
+                current.reset_movement()  # Reset movement for new turn
+            
             self.current_turn = (self.current_turn + 1) % len(turn_order)
             if self.current_turn == 0:  # Back to first combatant
                 self.current_round += 1
             db.session.commit()
+    
+    def create_map(self, width=20, height=20):
+        """Create a combat map for this encounter."""
+        if not hasattr(self, 'combat_map') or not self.combat_map:
+            from spatial_combat import create_default_combat_map
+            
+            # Create the database record
+            combat_map_db = CombatMap(
+                combat_id=self.id,
+                width=width,
+                height=height
+            )
+            db.session.add(combat_map_db)
+            db.session.commit()
+            
+            # Initialize positions for all combatants
+            self.initialize_combatant_positions()
+    
+    def initialize_combatant_positions(self):
+        """Place all combatants at starting positions on the map."""
+        if not hasattr(self, 'combat_map') or not self.combat_map:
+            return
+        
+        # Place combatants in a line on one side of the map
+        for i, combatant in enumerate(self.combatants):
+            x = 2  # Start positions away from wall
+            y = 2 + i * 2  # Space them out
+            
+            position = CombatPosition(
+                combatant_id=combatant.id,
+                map_id=self.combat_map.id,
+                x=x, y=y, z=0,
+                movement_used=0
+            )
+            db.session.add(position)
+        
+        db.session.commit()
+    
+    def end_combat(self, winning_side='players'):
+        """End combat and distribute experience."""
+        self.is_active = False
+        
+        # Calculate total XP from defeated enemies
+        total_xp = 0
+        enemy_count = 0
+        
+        for combatant in self.combatants:
+            # Simple check: if character class is 'monster', it's an enemy
+            if combatant.character.character_class.lower() == 'monster' and combatant.current_hp <= 0:
+                # Get enemy template for XP
+                enemy = Enemy.query.filter_by(name=combatant.character.name.split(' #')[0]).first()
+                if enemy:
+                    total_xp += enemy.experience_points
+                    enemy_count += 1
+        
+        # Distribute XP among living player characters
+        if total_xp > 0 and winning_side == 'players':
+            living_players = [c for c in self.combatants 
+                            if c.character.character_class.lower() != 'monster' and c.current_hp > 0]
+            
+            if living_players:
+                xp_per_player = total_xp // len(living_players)
+                
+                for combatant in living_players:
+                    combatant.character.gain_experience(xp_per_player)
+        
+        db.session.commit()
+        
+        return {
+            'total_xp': total_xp,
+            'enemies_defeated': enemy_count,
+            'xp_per_player': xp_per_player if total_xp > 0 and winning_side == 'players' else 0
+        }
 
 class Combatant(db.Model):
     """
@@ -519,6 +733,108 @@ class Combatant(db.Model):
             self.remove_condition('unconscious')
         
         db.session.commit()
+    
+    def get_position(self):
+        """Get the current position of this combatant."""
+        if hasattr(self, 'position') and self.position:
+            return self.position
+        return None
+    
+    def move_to(self, x, y, z=0):
+        """Move combatant to a new position."""
+        if hasattr(self, 'position') and self.position:
+            self.position.x = x
+            self.position.y = y
+            self.position.z = z
+            self.position.movement_used = 0  # Reset for new position
+        else:
+            # Create new position if none exists
+            from spatial_combat import Position
+            combat_map = CombatMap.query.filter_by(combat_id=self.combat_id).first()
+            if combat_map:
+                position = CombatPosition(
+                    combatant_id=self.id,
+                    map_id=combat_map.id,
+                    x=x, y=y, z=z,
+                    movement_used=0
+                )
+                db.session.add(position)
+        
+        db.session.commit()
+    
+    def use_movement(self, amount):
+        """Use movement for this turn."""
+        if hasattr(self, 'position') and self.position:
+            self.position.movement_used += amount
+            db.session.commit()
+    
+    def get_remaining_movement(self):
+        """Get remaining movement for this turn."""
+        if not hasattr(self, 'position') or not self.position:
+            return self.character.movement_speed
+        
+        return max(0, self.character.movement_speed - self.position.movement_used)
+    
+    def reset_movement(self):
+        """Reset movement at start of turn."""
+        if hasattr(self, 'position') and self.position:
+            self.position.movement_used = 0
+            db.session.commit()
+    
+    def get_active_status_effects(self):
+        """Get all active status effects for this combatant."""
+        return [effect for effect in self.status_effects if effect.duration_remaining > 0]
+    
+    def apply_status_effect(self, effect_name, duration=1, effect_type='condition', effect_data=None, source_type=None, source_id=None):
+        """Apply a status effect to this combatant."""
+        # Check if effect already exists
+        existing_effect = StatusEffect.query.filter_by(
+            combatant_id=self.id,
+            name=effect_name
+        ).first()
+        
+        if existing_effect:
+            # Refresh duration for existing effect
+            existing_effect.duration_remaining = max(existing_effect.duration_remaining, duration)
+        else:
+            # Create new effect
+            effect = StatusEffect(
+                combatant_id=self.id,
+                name=effect_name,
+                description=f"Status effect: {effect_name}",
+                duration_type='rounds',
+                duration_remaining=duration,
+                effect_type=effect_type,
+                effect_data=json.dumps(effect_data) if effect_data else None,
+                source_type=source_type,
+                source_id=source_id
+            )
+            db.session.add(effect)
+        
+        db.session.commit()
+    
+    def remove_status_effect(self, effect_name):
+        """Remove a specific status effect."""
+        effect = StatusEffect.query.filter_by(
+            combatant_id=self.id,
+            name=effect_name
+        ).first()
+        
+        if effect:
+            db.session.delete(effect)
+            db.session.commit()
+    
+    def tick_status_effects(self):
+        """Reduce duration of all status effects by 1 round."""
+        for effect in self.status_effects:
+            if effect.duration_remaining > 0:
+                effect.duration_remaining -= 1
+                
+                # Remove expired effects
+                if effect.duration_remaining <= 0:
+                    db.session.delete(effect)
+        
+        db.session.commit()
 
 class CombatAction(db.Model):
     """
@@ -543,6 +859,76 @@ class CombatAction(db.Model):
     # Relationships
     actor = db.relationship('Combatant', foreign_keys=[actor_id], backref='actions_taken')
     target = db.relationship('Combatant', foreign_keys=[target_id], backref='actions_received')
+
+class CombatMap(db.Model):
+    """
+    Database model for combat maps.
+    
+    Stores spatial information about combat encounters including dimensions
+    and terrain features.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id'), nullable=False)
+    width = db.Column(db.Integer, nullable=False, default=20)
+    height = db.Column(db.Integer, nullable=False, default=20)
+    
+    # JSON data for terrain and features
+    terrain_data = db.Column(db.Text)  # JSON encoding of terrain layout
+    
+    # Relationships
+    combat = db.relationship('Combat', backref='combat_map', uselist=False)
+    positions = db.relationship('CombatPosition', backref='map', lazy=True, cascade='all, delete-orphan')
+
+class CombatPosition(db.Model):
+    """
+    Database model for combatant positions on the combat map.
+    
+    Tracks where each combatant is located during combat.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    combatant_id = db.Column(db.Integer, db.ForeignKey('combatant.id'), nullable=False)
+    map_id = db.Column(db.Integer, db.ForeignKey('combat_map.id'), nullable=False)
+    
+    # Position coordinates
+    x = db.Column(db.Integer, nullable=False)
+    y = db.Column(db.Integer, nullable=False)
+    z = db.Column(db.Integer, default=0)  # Height for 3D combat
+    
+    # Movement tracking
+    movement_used = db.Column(db.Integer, default=0)  # Movement used this turn
+    
+    # Relationships
+    combatant = db.relationship('Combatant', backref='position', uselist=False)
+
+class StatusEffect(db.Model):
+    """
+    Database model for status effects affecting combatants.
+    
+    Tracks temporary conditions, buffs, debuffs, and other effects.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    combatant_id = db.Column(db.Integer, db.ForeignKey('combatant.id'), nullable=False)
+    
+    name = db.Column(db.String(100), nullable=False)  # e.g., 'Poisoned', 'Blessed', 'Haste'
+    description = db.Column(db.Text)
+    
+    # Duration tracking
+    duration_type = db.Column(db.String(20), nullable=False)  # 'rounds', 'minutes', 'hours', 'permanent'
+    duration_remaining = db.Column(db.Integer, default=1)  # -1 for permanent
+    
+    # Effect mechanics
+    effect_type = db.Column(db.String(50), nullable=False)  # 'condition', 'stat_modifier', 'damage_over_time', etc.
+    effect_data = db.Column(db.Text)  # JSON data for effect parameters
+    
+    # Source tracking
+    source_type = db.Column(db.String(50))  # 'spell', 'item', 'ability', 'environment'
+    source_id = db.Column(db.Integer)  # ID of the source (spell, item, etc.)
+    
+    # Applied timestamp
+    applied_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    # Relationships
+    combatant = db.relationship('Combatant', backref='status_effects')
 
 class Enemy(db.Model):
     """
@@ -1198,6 +1584,255 @@ def end_turn(combat_id):
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/combat/<int:combat_id>/move', methods=['POST'])
+def move_combatant(combat_id):
+    """Move a combatant to a new position."""
+    try:
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        x = data.get('x')
+        y = data.get('y')
+        z = data.get('z', 0)
+        
+        if combatant_id is None or x is None or y is None:
+            return jsonify({'error': 'Combatant ID and coordinates required'}), 400
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        
+        # Check if it's the combatant's turn
+        combat = Combat.query.get(combat_id)
+        if combat.current_combatant.id != combatant_id:
+            return jsonify({'error': 'Not this combatant\'s turn'}), 400
+        
+        # Check if combatant has movement available
+        if not combatant.has_movement:
+            return jsonify({'error': 'No movement available this turn'}), 400
+        
+        # Get or create combat map
+        combat_map = CombatMap.query.filter_by(combat_id=combat_id).first()
+        if not combat_map:
+            combat.create_map()
+            combat_map = CombatMap.query.filter_by(combat_id=combat_id).first()
+        
+        # Create spatial combat engine
+        from spatial_combat import CombatMap as SpatialMap, SpatialCombatEngine, Position
+        spatial_map = SpatialMap(combat_map.width, combat_map.height)
+        
+        # Load current positions
+        positions = CombatPosition.query.filter_by(map_id=combat_map.id).all()
+        for pos in positions:
+            spatial_map.place_combatant(pos.combatant_id, Position(pos.x, pos.y, pos.z))
+        
+        engine = SpatialCombatEngine(spatial_map)
+        
+        # Attempt movement
+        target_pos = Position(x, y, z)
+        success, message, path = engine.move_combatant(
+            combatant_id, 
+            target_pos, 
+            combatant.get_remaining_movement()
+        )
+        
+        if success:
+            # Update database position
+            position = CombatPosition.query.filter_by(
+                combatant_id=combatant_id,
+                map_id=combat_map.id
+            ).first()
+            
+            if position:
+                final_pos = path[-1] if path else target_pos
+                position.x = final_pos.x
+                position.y = final_pos.y
+                position.z = final_pos.z
+                
+                # Calculate movement used
+                movement_used = 0
+                for i in range(len(path) - 1):
+                    movement_used += spatial_map.calculate_movement_cost(path[i], path[i + 1])
+                
+                position.movement_used += movement_used
+                combatant.has_movement = position.movement_used < combatant.character.movement_speed
+            else:
+                # Create new position
+                final_pos = path[-1] if path else target_pos
+                position = CombatPosition(
+                    combatant_id=combatant_id,
+                    map_id=combat_map.id,
+                    x=final_pos.x,
+                    y=final_pos.y,
+                    z=final_pos.z,
+                    movement_used=0
+                )
+                db.session.add(position)
+            
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': message,
+                'new_position': {'x': position.x, 'y': position.y, 'z': position.z},
+                'movement_used': position.movement_used,
+                'remaining_movement': combatant.get_remaining_movement(),
+                'path': [{'x': p.x, 'y': p.y, 'z': p.z} for p in path] if path else []
+            })
+        else:
+            return jsonify({'success': False, 'message': message}), 400
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/map')
+def get_combat_map(combat_id):
+    """Get the combat map and all combatant positions."""
+    try:
+        combat = Combat.query.get_or_404(combat_id)
+        
+        # Get or create combat map
+        combat_map = CombatMap.query.filter_by(combat_id=combat_id).first()
+        if not combat_map:
+            combat.create_map()
+            combat_map = CombatMap.query.filter_by(combat_id=combat_id).first()
+        
+        # Get all positions
+        positions = CombatPosition.query.filter_by(map_id=combat_map.id).all()
+        
+        # Get combatant info
+        combatant_positions = []
+        for pos in positions:
+            combatant_positions.append({
+                'combatant_id': pos.combatant_id,
+                'character_name': pos.combatant.character.name,
+                'x': pos.x,
+                'y': pos.y,
+                'z': pos.z,
+                'movement_used': pos.movement_used,
+                'max_movement': pos.combatant.character.movement_speed
+            })
+        
+        return jsonify({
+            'map_id': combat_map.id,
+            'width': combat_map.width,
+            'height': combat_map.height,
+            'combatant_positions': combatant_positions
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/attack_range', methods=['POST'])
+def check_attack_range(combat_id):
+    """Check if an attack is within range and has line of sight."""
+    try:
+        data = request.get_json()
+        attacker_id = data.get('attacker_id')
+        target_id = data.get('target_id')
+        weapon_range = data.get('weapon_range', 5)  # Default melee range
+        
+        if not attacker_id or not target_id:
+            return jsonify({'error': 'Attacker and target required'}), 400
+        
+        # Get combat map and positions
+        combat_map = CombatMap.query.filter_by(combat_id=combat_id).first()
+        if not combat_map:
+            return jsonify({'error': 'No combat map found'}), 404
+        
+        attacker_pos = CombatPosition.query.filter_by(
+            combatant_id=attacker_id,
+            map_id=combat_map.id
+        ).first()
+        
+        target_pos = CombatPosition.query.filter_by(
+            combatant_id=target_id,
+            map_id=combat_map.id
+        ).first()
+        
+        if not attacker_pos or not target_pos:
+            return jsonify({'error': 'Combatant positions not found'}), 404
+        
+        # Create spatial engine
+        from spatial_combat import CombatMap as SpatialMap, SpatialCombatEngine, Position
+        spatial_map = SpatialMap(combat_map.width, combat_map.height)
+        engine = SpatialCombatEngine(spatial_map)
+        
+        # Check range and line of sight
+        can_attack, message = engine.can_attack_target(attacker_id, target_id, weapon_range)
+        
+        # Calculate distance
+        attacker_position = Position(attacker_pos.x, attacker_pos.y, attacker_pos.z)
+        target_position = Position(target_pos.x, target_pos.y, target_pos.z)
+        distance = attacker_position.distance_to(target_position)
+        
+        # Get attack modifiers
+        modifiers = engine.get_attack_modifiers(attacker_id, target_id)
+        
+        return jsonify({
+            'can_attack': can_attack,
+            'message': message,
+            'distance': distance,
+            'weapon_range': weapon_range,
+            'modifiers': modifiers
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/status_effect', methods=['POST'])
+def apply_status_effect(combat_id):
+    """Apply a status effect to a combatant."""
+    try:
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        effect_name = data.get('effect_name')
+        duration = data.get('duration', 1)
+        effect_type = data.get('effect_type', 'condition')
+        effect_data = data.get('effect_data', {})
+        source_type = data.get('source_type')
+        source_id = data.get('source_id')
+        
+        if not combatant_id or not effect_name:
+            return jsonify({'error': 'Combatant ID and effect name required'}), 400
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        
+        combatant.apply_status_effect(
+            effect_name=effect_name,
+            duration=duration,
+            effect_type=effect_type,
+            effect_data=effect_data,
+            source_type=source_type,
+            source_id=source_id
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'Applied {effect_name} to {combatant.character.name}'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/end', methods=['POST'])
+def end_combat(combat_id):
+    """End the combat and distribute experience."""
+    try:
+        data = request.get_json()
+        winning_side = data.get('winning_side', 'players')
+        
+        combat = Combat.query.get_or_404(combat_id)
+        result = combat.end_combat(winning_side)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Combat ended',
+            **result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/combat/<int:combat_id>/death_save', methods=['POST'])
 def death_saving_throw(combat_id):
     """Make a death saving throw."""
@@ -1724,6 +2359,11 @@ def list_combats():
 def combat_page():
     """Render the combat management page."""
     return render_template('combat.html')
+
+@app.route('/spatial_combat')
+def spatial_combat_page():
+    """Render the spatial combat interface."""
+    return render_template('spatial_combat.html')
 
 @app.route('/api/characters')
 def api_characters():

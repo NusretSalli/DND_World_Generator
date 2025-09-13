@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D&D Spatial Combat - DND World Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .combat-grid {
+            display: grid;
+            grid-template-columns: repeat(20, 30px);
+            grid-template-rows: repeat(20, 30px);
+            gap: 1px;
+            margin: 20px auto;
+            background-color: #333;
+            padding: 10px;
+            border: 2px solid #666;
+            max-width: fit-content;
+        }
+        
+        .grid-cell {
+            width: 30px;
+            height: 30px;
+            background-color: #444;
+            border: 1px solid #666;
+            position: relative;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        
+        .grid-cell.open {
+            background-color: #2d5a2d;
+        }
+        
+        .grid-cell.obstacle {
+            background-color: #5a2d2d;
+        }
+        
+        .grid-cell.cover {
+            background-color: #5a5a2d;
+        }
+        
+        .grid-cell.difficult {
+            background-color: #4a4a2d;
+        }
+        
+        .grid-cell.combatant {
+            background-color: #2d5a8a;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .grid-cell.current-turn {
+            box-shadow: inset 0 0 0 3px #ffff00;
+        }
+        
+        .grid-cell.valid-move {
+            background-color: #3a7a3a !important;
+            box-shadow: inset 0 0 0 2px #00ff00;
+        }
+        
+        .grid-cell.attack-range {
+            box-shadow: inset 0 0 0 2px #ff0000;
+        }
+        
+        .combat-info {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            background-color: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            flex: 1;
+        }
+        
+        .combatants-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .combatant-card {
+            background-color: #333;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #666;
+        }
+        
+        .combatant-card.current {
+            border-left-color: #ffff00;
+        }
+        
+        .combatant-card.dead {
+            border-left-color: #ff0000;
+            opacity: 0.6;
+        }
+        
+        .hp-bar {
+            width: 100%;
+            height: 10px;
+            background-color: #555;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 5px 0;
+        }
+        
+        .hp-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 0 5px;
+            font-size: 14px;
+        }
+        
+        .btn:hover {
+            background-color: #45a049;
+        }
+        
+        .btn.secondary {
+            background-color: #666;
+        }
+        
+        .btn.secondary:hover {
+            background-color: #555;
+        }
+        
+        .btn.danger {
+            background-color: #f44336;
+        }
+        
+        .btn.danger:hover {
+            background-color: #da190b;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        
+        .status-effects {
+            margin-top: 10px;
+        }
+        
+        .status-effect {
+            display: inline-block;
+            background-color: #444;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 2px;
+            font-size: 11px;
+        }
+        
+        .log {
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            height: 150px;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+        
+        .mode-selector {
+            margin: 10px 0;
+        }
+        
+        .mode-btn {
+            background-color: #333;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 0 2px;
+        }
+        
+        .mode-btn.active {
+            background-color: #4CAF50;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>D&D Spatial Combat System</h1>
+            <p>Enhanced combat with movement, positioning, and tactical elements</p>
+        </div>
+        
+        <div class="combat-info">
+            <div class="panel">
+                <h3>Combat Status</h3>
+                <div id="combat-status">
+                    <p>Round: <span id="current-round">1</span></p>
+                    <p>Current Turn: <span id="current-turn">None</span></p>
+                    <p>Combat ID: <span id="combat-id">None</span></p>
+                </div>
+                
+                <h4>Map Legend</h4>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #2d5a2d;"></div>
+                        <span>Open</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #5a2d2d;"></div>
+                        <span>Obstacle</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #5a5a2d;"></div>
+                        <span>Cover</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #4a4a2d;"></div>
+                        <span>Difficult</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #2d5a8a;"></div>
+                        <span>Combatant</span>
+                    </div>
+                </div>
+                
+                <div class="mode-selector">
+                    <h4>Interaction Mode</h4>
+                    <button class="mode-btn active" data-mode="move">Move</button>
+                    <button class="mode-btn" data-mode="attack">Attack</button>
+                    <button class="mode-btn" data-mode="view">View Only</button>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>Combatants</h3>
+                <div id="combatants-list" class="combatants-list">
+                    <!-- Combatants will be loaded here -->
+                </div>
+            </div>
+        </div>
+        
+        <div class="combat-grid" id="combat-grid">
+            <!-- Grid cells will be generated here -->
+        </div>
+        
+        <div class="controls">
+            <button class="btn" onclick="startNewCombat()">Start New Combat</button>
+            <button class="btn secondary" onclick="loadCombat()">Load Combat</button>
+            <button class="btn secondary" onclick="endTurn()">End Turn</button>
+            <button class="btn danger" onclick="endCombat()">End Combat</button>
+        </div>
+        
+        <div class="panel">
+            <h3>Action Log</h3>
+            <div id="action-log" class="log">
+                <div class="log-entry">Combat system loaded. Start a new combat to begin.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCombat = null;
+        let currentMode = 'move';
+        let selectedCombatant = null;
+        let gridWidth = 20;
+        let gridHeight = 20;
+        
+        // Initialize the combat grid
+        function initializeGrid() {
+            const grid = document.getElementById('combat-grid');
+            grid.innerHTML = '';
+            
+            for (let y = 0; y < gridHeight; y++) {
+                for (let x = 0; x < gridWidth; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell open';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    cell.onclick = () => handleCellClick(x, y);
+                    grid.appendChild(cell);
+                }
+            }
+            
+            // Add some default terrain
+            addDefaultTerrain();
+        }
+        
+        function addDefaultTerrain() {
+            // Add walls around edges
+            for (let x = 0; x < gridWidth; x++) {
+                setCellTerrain(x, 0, 'obstacle');
+                setCellTerrain(x, gridHeight - 1, 'obstacle');
+            }
+            for (let y = 0; y < gridHeight; y++) {
+                setCellTerrain(0, y, 'obstacle');
+                setCellTerrain(gridWidth - 1, y, 'obstacle');
+            }
+            
+            // Add some cover and difficult terrain
+            setCellTerrain(10, 10, 'cover');
+            setCellTerrain(7, 8, 'cover');
+            setCellTerrain(13, 12, 'cover');
+            
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx !== 0 || dy !== 0) {
+                        setCellTerrain(15 + dx, 15 + dy, 'difficult');
+                    }
+                }
+            }
+        }
+        
+        function setCellTerrain(x, y, terrain) {
+            const cell = document.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+            if (cell) {
+                cell.className = `grid-cell ${terrain}`;
+            }
+        }
+        
+        function handleCellClick(x, y) {
+            if (!currentCombat) {
+                addLogEntry('No active combat. Start a new combat first.');
+                return;
+            }
+            
+            if (currentMode === 'move') {
+                handleMovement(x, y);
+            } else if (currentMode === 'attack') {
+                handleAttack(x, y);
+            }
+        }
+        
+        function handleMovement(x, y) {
+            if (!selectedCombatant) {
+                addLogEntry('No combatant selected for movement.');
+                return;
+            }
+            
+            // Send movement request
+            fetch(`/combat/${currentCombat.combat_id}/move`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    combatant_id: selectedCombatant.id,
+                    x: x,
+                    y: y,
+                    z: 0
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addLogEntry(`${selectedCombatant.character_name} moved to (${x}, ${y}). ${data.message}`);
+                    updateCombatDisplay();
+                } else {
+                    addLogEntry(`Movement failed: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                addLogEntry(`Error: ${error.message}`);
+            });
+        }
+        
+        function handleAttack(x, y) {
+            // Find combatant at target position
+            const targetCombatant = findCombatantAt(x, y);
+            if (!targetCombatant) {
+                addLogEntry('No combatant at target position.');
+                return;
+            }
+            
+            if (!selectedCombatant) {
+                addLogEntry('No attacker selected.');
+                return;
+            }
+            
+            // Check range first
+            fetch(`/combat/${currentCombat.combat_id}/attack_range`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    attacker_id: selectedCombatant.id,
+                    target_id: targetCombatant.id,
+                    weapon_range: 5  // Default melee range
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.can_attack) {
+                    // Proceed with attack
+                    makeAttack(selectedCombatant.id, targetCombatant.id);
+                } else {
+                    addLogEntry(`Cannot attack: ${data.message}`);
+                }
+            });
+        }
+        
+        function makeAttack(attackerId, targetId) {
+            fetch(`/combat/${currentCombat.combat_id}/attack`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    attacker_id: attackerId,
+                    target_id: targetId,
+                    weapon_id: null  // Using default weapon
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const hitText = data.hit ? 'hit' : 'missed';
+                    const damageText = data.hit ? ` for ${data.damage} ${data.damage_type} damage` : '';
+                    const critText = data.critical ? ' (Critical Hit!)' : '';
+                    addLogEntry(`Attack ${hitText}${damageText}${critText}`);
+                    updateCombatDisplay();
+                } else {
+                    addLogEntry(`Attack failed: ${data.error}`);
+                }
+            });
+        }
+        
+        function findCombatantAt(x, y) {
+            if (!currentCombat || !currentCombat.combatant_positions) return null;
+            return currentCombat.combatant_positions.find(pos => pos.x === x && pos.y === y);
+        }
+        
+        async function startNewCombat() {
+            // Get available characters
+            const response = await fetch('/api/characters');
+            const characters = await response.json();
+            
+            if (characters.length === 0) {
+                addLogEntry('No characters available. Create characters first.');
+                return;
+            }
+            
+            // For demo, use all characters
+            const characterIds = characters.map(c => c.id);
+            
+            // Start combat
+            fetch('/combat/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: 'Spatial Combat Encounter',
+                    character_ids: characterIds
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.combat_id) {
+                    addLogEntry(`Started new combat: ${data.name}`);
+                    currentCombat = data;
+                    loadCombatMap();
+                    updateCombatDisplay();
+                } else {
+                    addLogEntry(`Failed to start combat: ${data.error}`);
+                }
+            });
+        }
+        
+        async function loadCombatMap() {
+            if (!currentCombat) return;
+            
+            const response = await fetch(`/combat/${currentCombat.combat_id}/map`);
+            const mapData = await response.json();
+            
+            if (mapData.combatant_positions) {
+                currentCombat.combatant_positions = mapData.combatant_positions;
+                updateGridDisplay();
+            }
+        }
+        
+        function updateGridDisplay() {
+            // Clear all combatants from grid
+            document.querySelectorAll('.grid-cell').forEach(cell => {
+                cell.classList.remove('combatant', 'current-turn');
+                cell.textContent = '';
+            });
+            
+            // Place combatants
+            if (currentCombat && currentCombat.combatant_positions) {
+                currentCombat.combatant_positions.forEach(pos => {
+                    const cell = document.querySelector(`[data-x="${pos.x}"][data-y="${pos.y}"]`);
+                    if (cell) {
+                        cell.classList.add('combatant');
+                        cell.textContent = pos.character_name.charAt(0);
+                        if (selectedCombatant && selectedCombatant.combatant_id === pos.combatant_id) {
+                            cell.classList.add('current-turn');
+                        }
+                    }
+                });
+            }
+        }
+        
+        async function updateCombatDisplay() {
+            if (!currentCombat) return;
+            
+            // Get current combat status
+            const response = await fetch(`/combat/${currentCombat.combat_id}/status`);
+            const status = await response.json();
+            
+            if (status.error) {
+                addLogEntry(`Error updating combat: ${status.error}`);
+                return;
+            }
+            
+            // Update combat info
+            document.getElementById('current-round').textContent = status.round;
+            document.getElementById('current-turn').textContent = status.current_combatant_name || 'None';
+            document.getElementById('combat-id').textContent = status.combat_id;
+            
+            // Update combatants list
+            const combatantsList = document.getElementById('combatants-list');
+            combatantsList.innerHTML = '';
+            
+            status.combatants.forEach(combatant => {
+                const card = document.createElement('div');
+                card.className = `combatant-card ${combatant.id === status.current_combatant_id ? 'current' : ''} ${combatant.is_dead ? 'dead' : ''}`;
+                card.onclick = () => selectCombatant(combatant);
+                
+                const hpPercent = (combatant.current_hp / combatant.max_hp) * 100;
+                
+                card.innerHTML = `
+                    <div><strong>${combatant.character_name}</strong> (${combatant.character_class})</div>
+                    <div>HP: ${combatant.current_hp}/${combatant.max_hp}</div>
+                    <div class="hp-bar">
+                        <div class="hp-fill" style="width: ${hpPercent}%"></div>
+                    </div>
+                    <div>AC: ${combatant.ac} | Initiative: ${combatant.initiative}</div>
+                    ${combatant.conditions.length > 0 ? `
+                        <div class="status-effects">
+                            ${combatant.conditions.map(c => `<span class="status-effect">${c}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                `;
+                
+                combatantsList.appendChild(card);
+            });
+            
+            // Update selected combatant if it was the current turn
+            if (status.current_combatant_id && (!selectedCombatant || selectedCombatant.id !== status.current_combatant_id)) {
+                const currentCombatant = status.combatants.find(c => c.id === status.current_combatant_id);
+                if (currentCombatant) {
+                    selectCombatant(currentCombatant);
+                }
+            }
+            
+            // Reload map positions
+            await loadCombatMap();
+        }
+        
+        function selectCombatant(combatant) {
+            selectedCombatant = combatant;
+            updateGridDisplay();
+            addLogEntry(`Selected ${combatant.character_name}`);
+        }
+        
+        function endTurn() {
+            if (!currentCombat) {
+                addLogEntry('No active combat.');
+                return;
+            }
+            
+            fetch(`/combat/${currentCombat.combat_id}/end_turn`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addLogEntry('Turn ended.');
+                    updateCombatDisplay();
+                } else {
+                    addLogEntry(`Failed to end turn: ${data.error}`);
+                }
+            });
+        }
+        
+        function endCombat() {
+            if (!currentCombat) {
+                addLogEntry('No active combat.');
+                return;
+            }
+            
+            fetch(`/combat/${currentCombat.combat_id}/end`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    winning_side: 'players'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addLogEntry(`Combat ended. Total XP: ${data.total_xp}, XP per player: ${data.xp_per_player}`);
+                    currentCombat = null;
+                    selectedCombatant = null;
+                    updateGridDisplay();
+                } else {
+                    addLogEntry(`Failed to end combat: ${data.error}`);
+                }
+            });
+        }
+        
+        function addLogEntry(message) {
+            const log = document.getElementById('action-log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        // Mode selection
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentMode = btn.dataset.mode;
+                addLogEntry(`Switched to ${currentMode} mode`);
+            };
+        });
+        
+        // Initialize the page
+        initializeGrid();
+        
+        // Auto-refresh combat status every 5 seconds if combat is active
+        setInterval(() => {
+            if (currentCombat) {
+                updateCombatDisplay();
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
