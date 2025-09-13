@@ -13,15 +13,25 @@ import os
 from items import CLASS_EQUIPMENT, ALL_ITEMS, CharacterEquipment, EquipmentSlot, ItemRarity, ItemType
 from story import story_generator
 
+# Initialize Flask application
 app = Flask(__name__)
-# Configure SQLAlchemy
+# Configure SQLAlchemy to use SQLite database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dnd_characters.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Initialize database and migration handling
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-# Item Model
+# Item Model - Represents all objects that can be owned by characters
 class Item(db.Model):
+    """
+    Database model for all items in the game.
+    
+    This model represents equipment, weapons, armor, and other objects that characters
+    can possess. It contains both core properties shared by all items and specialized
+    properties for different item types.
+    """
+    # Core properties
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     item_type = db.Column(db.String(50), nullable=False)  # weapon, armor, gear, etc.
@@ -59,10 +69,16 @@ class Item(db.Model):
     max_charges = db.Column(db.Integer)
 
     def __repr__(self):
+        """String representation of the item."""
         return f'<Item {self.name}>'
     
     def get_effects_list(self):
-        """Parse effects JSON string into list."""
+        """
+        Parse effects JSON string into list.
+        
+        Returns:
+            list: List of effect descriptions or empty list if none
+        """
         if self.effects:
             import json
             try:
@@ -72,12 +88,22 @@ class Item(db.Model):
         return []
     
     def set_effects_list(self, effects_list):
-        """Store effects list as JSON string."""
+        """
+        Store effects list as JSON string.
+        
+        Args:
+            effects_list (list): List of effect descriptions
+        """
         import json
         self.effects = json.dumps(effects_list) if effects_list else None
     
     def get_tags_list(self):
-        """Parse tags JSON string into list."""
+        """
+        Parse tags JSON string into list.
+        
+        Returns:
+            list: List of tags or empty list if none
+        """
         if self.tags:
             import json
             try:
@@ -87,12 +113,25 @@ class Item(db.Model):
         return []
     
     def set_tags_list(self, tags_list):
-        """Store tags list as JSON string."""
+        """
+        Store tags list as JSON string.
+        
+        Args:
+            tags_list (list): List of tags
+        """
         import json
         self.tags = json.dumps(tags_list) if tags_list else None
 
-# Character Model
+# Character Model - Represents player characters with D&D 5e statistics and capabilities
 class Character(db.Model):
+    """
+    Database model for player characters.
+    
+    This model implements D&D 5e rules for character statistics, abilities,
+    inventory management, and equipment. It handles character creation, stat
+    calculations, and game mechanics.
+    """
+    # Basic information
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     gender = db.Column(db.String(20), nullable=False)
@@ -104,7 +143,7 @@ class Character(db.Model):
     current_hp = db.Column(db.Integer, nullable=False)
     armor_class = db.Column(db.Integer, nullable=False, default=10)
     
-    # Ability Scores
+    # Ability Scores - D&D 5e core stats
     strength = db.Column(db.Integer, nullable=False)
     dexterity = db.Column(db.Integer, nullable=False)
     constitution = db.Column(db.Integer, nullable=False)
@@ -112,21 +151,30 @@ class Character(db.Model):
     wisdom = db.Column(db.Integer, nullable=False)
     charisma = db.Column(db.Integer, nullable=False)
     
-    # Currency
+    # Currency - D&D 5e uses a multi-currency system
     copper = db.Column(db.Integer, default=0)
     silver = db.Column(db.Integer, default=0)
     gold = db.Column(db.Integer, default=0)
     platinum = db.Column(db.Integer, default=0)
     
-    # Relationships
+    # Relationships - Link to items owned by this character
     inventory = db.relationship('Item', backref='owner', lazy=True)
 
     def __repr__(self):
+        """String representation of the character."""
         return f'<Character {self.name}>'
     
     @property
     def equipment(self):
-        """Get character equipment manager."""
+        """
+        Get character equipment manager.
+        
+        This property provides access to the CharacterEquipment class that manages
+        equipment slots and attunement. It's lazily initialized and cached.
+        
+        Returns:
+            CharacterEquipment: An equipment manager for this character
+        """
         if not hasattr(self, '_equipment') or self._equipment is None:
             self._equipment = CharacterEquipment()
             # Load equipped items from database
@@ -143,7 +191,19 @@ class Character(db.Model):
         return self._equipment
     
     def equip_item(self, item_id, slot_name):
-        """Equip an item to a specific slot."""
+        """
+        Equip an item to a specific slot.
+        
+        This method handles equipping an item from the character's inventory
+        to a specific equipment slot.
+        
+        Args:
+            item_id (int): ID of the item to equip
+            slot_name (str): Name of the equipment slot
+            
+        Returns:
+            tuple: (success, message) where success is a boolean and message is a string
+        """
         item = Item.query.get(item_id)
         if not item or item.character_id != self.id:
             return False, "Item not found in inventory"
@@ -163,7 +223,17 @@ class Character(db.Model):
         return success, message
     
     def unequip_item(self, slot_name):
-        """Unequip an item from a specific slot."""
+        """
+        Unequip an item from a specific slot.
+        
+        This method handles removing an item from an equipment slot.
+        
+        Args:
+            slot_name (str): Name of the equipment slot
+            
+        Returns:
+            tuple: (success, message) where success is a boolean and message is a string
+        """
         try:
             slot = EquipmentSlot(slot_name)
         except ValueError:
@@ -179,7 +249,37 @@ class Character(db.Model):
         return False, "No item equipped in that slot"
     
     def add_item(self, name, item_type, description="", weight=0, value=0, **kwargs):
-        """Add an item to character inventory with enhanced properties."""
+        """
+        Add an item to character inventory with enhanced properties.
+        
+        This method creates a new Item instance and adds it to the character's
+        inventory with all the specified properties.
+        
+        Args:
+            name (str): Name of the item
+            item_type (str): Type of item (weapon, armor, gear, etc.)
+            description (str, optional): Item description. Defaults to "".
+            weight (float, optional): Item weight in pounds. Defaults to 0.
+            value (int, optional): Item value in gold pieces. Defaults to 0.
+            **kwargs: Additional item properties:
+                - rarity: Item rarity (common, uncommon, rare, etc.)
+                - magical: Whether the item is magical
+                - requires_attunement: Whether the item requires attunement
+                - damage: Damage dice (e.g., "1d6")
+                - damage_type: Type of damage (slashing, piercing, etc.)
+                - base_ac: Base armor class for armor
+                - armor_type: Type of armor (light, medium, heavy)
+                - strength_req: Minimum strength requirement
+                - stealth_disadvantage: Whether armor imposes disadvantage on stealth
+                - enchantment_bonus: Magic bonus (+1, +2, etc.)
+                - uses/max_uses: For consumable items
+                - charges/max_charges: For items with charges
+                - tags: List of tags for the item
+                - effects: List of effects the item provides
+                
+        Returns:
+            Item: The newly created and added item
+        """
         item = Item(
             name=name,
             item_type=item_type,
