@@ -73,6 +73,7 @@ class Enemy:
     # Proficiencies and resistances
     saving_throws: Dict[str, int] = None  # e.g., {"dex": 3, "wis": 2}
     skills: Dict[str, int] = None  # e.g., {"stealth": 4, "perception": 2}
+    damage_vulnerabilities: List[str] = None
     damage_resistances: List[str] = None
     damage_immunities: List[str] = None
     condition_immunities: List[str] = None
@@ -96,6 +97,8 @@ class Enemy:
             self.saving_throws = {}
         if self.skills is None:
             self.skills = {}
+        if self.damage_vulnerabilities is None:
+            self.damage_vulnerabilities = []
         if self.damage_resistances is None:
             self.damage_resistances = []
         if self.damage_immunities is None:

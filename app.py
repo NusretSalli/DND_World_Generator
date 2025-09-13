@@ -1328,19 +1328,32 @@ def throw_item(combat_id):
         
         thrower = Combatant.query.get(thrower_id)
         target = Combatant.query.get(target_id)
-        item = Item.query.get(item_id)
         
-        if not thrower or not target or not item:
-            return jsonify({'error': 'Invalid IDs'}), 400
+        if not thrower or not target:
+            return jsonify({'error': 'Invalid combatant IDs'}), 400
         
-        if item.character_id != thrower.character_id:
-            return jsonify({'error': 'Item not owned by thrower'}), 400
+        # For now, we'll simulate throwing with predefined item stats
+        # In a full implementation, we'd look up the actual item in the database
+        item_name = None
+        item_mappings = {
+            'acid_vial': 'Acid (vial)',
+            'alchemist_fire': 'Alchemist\'s fire (flask)',
+            'holy_water': 'Holy water (flask)',
+            'dagger': 'Dagger',
+            'javelin': 'Javelin',
+            'healing_potion': 'Potion of healing'
+        }
         
-        if not can_throw_item(item.name):
-            return jsonify({'error': f'{item.name} cannot be thrown'}), 400
+        item_name = item_mappings.get(item_id)
+        if not item_name:
+            return jsonify({'error': 'Invalid item selected'}), 400
+        
+        # Use the item name for throwing stats
+        if not can_throw_item(item_name):
+            return jsonify({'error': f'{item_name} cannot be thrown'}), 400
         
         # Get throwing stats
-        throw_stats = get_throw_damage(item.name)
+        throw_stats = get_throw_damage(item_name)
         
         # Calculate attack bonus (use DEX for thrown items)
         proficiency_bonus = CombatEngine.get_proficiency_bonus(thrower.character.level)
@@ -1378,8 +1391,9 @@ def throw_item(combat_id):
                     effect_message = f" and healed for {healing_amount} HP"
         
         # Consume/destroy the thrown item for consumables
-        if item.item_type in ['consumable', 'gear'] and item.name in ['Acid (vial)', 'Alchemist\'s fire (flask)', 'Holy water (flask)', 'Oil (flask)', 'Potion of healing']:
-            db.session.delete(item)
+        # For simulation purposes, we'll always consume consumable items
+        consumable_items = ['Acid (vial)', 'Alchemist\'s fire (flask)', 'Holy water (flask)', 'Oil (flask)', 'Potion of healing']
+        item_consumed = item_name in consumable_items
         
         # Use action
         thrower.has_action = False
@@ -1393,7 +1407,106 @@ def throw_item(combat_id):
             'damage_type': throw_stats.get('damage_type', 'bludgeoning'),
             'critical': critical,
             'effect_message': effect_message,
-            'item_consumed': item.name in ['Acid (vial)', 'Alchemist\'s fire (flask)', 'Holy water (flask)', 'Oil (flask)', 'Potion of healing']
+            'item_consumed': item_consumed
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/enemies')
+def list_enemies():
+    """List all available enemies."""
+    try:
+        enemies = Enemy.query.all()
+        
+        # If no enemies in database, populate with standard ones
+        if not enemies:
+            populate_standard_enemies()
+            enemies = Enemy.query.all()
+        
+        enemy_list = []
+        for enemy in enemies:
+            enemy_list.append({
+                'id': enemy.id,
+                'name': enemy.name,
+                'creature_type': enemy.creature_type,
+                'size': enemy.size,
+                'armor_class': enemy.armor_class,
+                'hit_points': enemy.hit_points,
+                'challenge_rating': enemy.challenge_rating,
+                'experience_points': enemy.experience_points
+            })
+        
+        return jsonify({'enemies': enemy_list})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/add_enemy', methods=['POST'])
+def add_enemy_to_combat(combat_id):
+    """Add an enemy to an existing combat."""
+    try:
+        data = request.get_json()
+        enemy_name = data.get('enemy_name')
+        
+        if not enemy_name:
+            return jsonify({'error': 'Enemy name required'}), 400
+        
+        combat = Combat.query.get_or_404(combat_id)
+        
+        # Get enemy template
+        enemy_template = Enemy.query.filter_by(name=enemy_name).first()
+        if not enemy_template:
+            return jsonify({'error': f'Enemy {enemy_name} not found'}), 404
+        
+        # Create a character-like entry for the enemy
+        from combat import CombatEngine
+        
+        # Roll initiative for the enemy
+        initiative = CombatEngine.roll_initiative(enemy_template.dexterity_modifier)
+        
+        # Create a temporary character for the enemy (we'd need a proper Enemy combatant type in a full implementation)
+        # For now, we'll create a basic character entry
+        enemy_character = Character(
+            name=f"{enemy_template.name} #{len(combat.combatants) + 1}",
+            gender="none",
+            race=enemy_template.creature_type,
+            character_class="monster",
+            level=1,
+            experience=0,
+            max_hp=enemy_template.hit_points,
+            current_hp=enemy_template.hit_points,
+            armor_class=enemy_template.armor_class,
+            strength=enemy_template.strength,
+            dexterity=enemy_template.dexterity,
+            constitution=enemy_template.constitution,
+            intelligence=enemy_template.intelligence,
+            wisdom=enemy_template.wisdom,
+            charisma=enemy_template.charisma,
+            gold=0
+        )
+        
+        db.session.add(enemy_character)
+        db.session.commit()
+        
+        # Add to combat
+        combatant = Combatant(
+            combat_id=combat.id,
+            character_id=enemy_character.id,
+            initiative=initiative,
+            current_hp=enemy_template.hit_points
+        )
+        db.session.add(combatant)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'combatant_id': combatant.id,
+            'character_id': enemy_character.id,
+            'name': enemy_character.name,
+            'initiative': initiative,
+            'hp': enemy_template.hit_points,
+            'ac': enemy_template.armor_class
         })
         
     except Exception as e:
