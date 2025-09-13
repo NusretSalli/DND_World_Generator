@@ -691,6 +691,13 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/demo')
+def demo():
+    """Serve the demo.html file to showcase combat system improvements."""
+    with open('demo.html', 'r') as f:
+        return f.read()
+
+
 @app.route('/generate_name')
 def generate_name():
     race = request.args.get('race', 'human')
@@ -1095,6 +1102,10 @@ def make_attack(combat_id):
         if not attacker or not target:
             return jsonify({'error': 'Invalid combatant IDs'}), 400
         
+        # Check if attacker has an action available
+        if not attacker.has_action:
+            return jsonify({'error': 'No action available. Actions can only be used once per turn.'}), 400
+        
         # Get weapon
         weapon = None
         if weapon_id:
@@ -1297,8 +1308,16 @@ def heal_combatant(combat_id):
                 'error': f'{healer.character.character_class.title()}s cannot cast healing spells. Only spellcasters like Clerics, Bards, Druids, Paladins, Rangers, Sorcerers, Warlocks, Wizards, and Artificers can heal.'
             }), 400
         
+        # Check if healer has an action available (healing spells typically use an action)
+        if not healer.has_action:
+            return jsonify({'error': 'No action available. Healing spells require an action.'}), 400
+        
         old_hp = combatant.current_hp
         combatant.heal(healing)
+        
+        # Use action for casting the healing spell
+        healer.has_action = False
+        db.session.commit()
         
         return jsonify({
             'success': True,
@@ -1331,6 +1350,10 @@ def throw_item(combat_id):
         
         if not thrower or not target:
             return jsonify({'error': 'Invalid combatant IDs'}), 400
+        
+        # Check if thrower has an action available
+        if not thrower.has_action:
+            return jsonify({'error': 'No action available. Actions can only be used once per turn.'}), 400
         
         # For now, we'll simulate throwing with predefined item stats
         # In a full implementation, we'd look up the actual item in the database
@@ -1438,6 +1461,168 @@ def list_enemies():
             })
         
         return jsonify({'enemies': enemy_list})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/bonus_action', methods=['POST'])
+def use_bonus_action(combat_id):
+    """Use a bonus action."""
+    try:
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        action_type = data.get('action_type')  # e.g., 'healing_word', 'cunning_action', etc.
+        action_data = data.get('action_data', {})
+        
+        if not combatant_id or not action_type:
+            return jsonify({'error': 'Combatant ID and action type required'}), 400
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        
+        # Check if combatant has a bonus action available
+        if not combatant.has_bonus_action:
+            return jsonify({'error': 'No bonus action available. Bonus actions can only be used once per turn.'}), 400
+        
+        # Process specific bonus actions
+        result = {}
+        if action_type == 'healing_word':
+            # Example bonus action healing spell (like Healing Word)
+            if not can_heal(combatant.character.character_class):
+                return jsonify({'error': 'Only spellcasters can cast Healing Word.'}), 400
+            
+            target_id = action_data.get('target_id')
+            healing = action_data.get('healing', 4)  # Default healing for Healing Word
+            
+            if target_id:
+                target = Combatant.query.get(target_id)
+                if target:
+                    old_hp = target.current_hp
+                    target.heal(healing)
+                    result = {
+                        'target_name': target.character.name,
+                        'healing_applied': target.current_hp - old_hp
+                    }
+        
+        elif action_type == 'second_wind':
+            # Fighter's Second Wind
+            if combatant.character.character_class.lower() != 'fighter':
+                return jsonify({'error': 'Only Fighters can use Second Wind.'}), 400
+            
+            healing = combatant.character.level + 10  # Second Wind healing formula
+            old_hp = combatant.current_hp
+            combatant.heal(healing)
+            result = {
+                'self_healing': combatant.current_hp - old_hp
+            }
+        
+        else:
+            # Generic bonus action
+            result = {'action_performed': action_type}
+        
+        # Use bonus action
+        combatant.has_bonus_action = False
+        db.session.commit()
+        
+        # Record the action
+        action = CombatAction(
+            combat_id=combat_id,
+            actor_id=combatant_id,
+            action_type=f'bonus_action_{action_type}',
+            round_number=Combat.query.get(combat_id).current_round,
+            action_data=json.dumps(action_data),
+            result=json.dumps(result)
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'action_type': action_type,
+            **result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/combat/<int:combat_id>/reaction', methods=['POST'])
+def use_reaction(combat_id):
+    """Use a reaction."""
+    try:
+        data = request.get_json()
+        combatant_id = data.get('combatant_id')
+        reaction_type = data.get('reaction_type')  # e.g., 'opportunity_attack', 'counterspell', etc.
+        trigger_data = data.get('trigger_data', {})
+        
+        if not combatant_id or not reaction_type:
+            return jsonify({'error': 'Combatant ID and reaction type required'}), 400
+        
+        combatant = Combatant.query.get_or_404(combatant_id)
+        
+        # Check if combatant has a reaction available
+        if not combatant.has_reaction:
+            return jsonify({'error': 'No reaction available. Reactions can only be used once per round.'}), 400
+        
+        # Process specific reactions
+        result = {}
+        if reaction_type == 'opportunity_attack':
+            # Make an opportunity attack
+            target_id = trigger_data.get('target_id')
+            if not target_id:
+                return jsonify({'error': 'Target required for opportunity attack'}), 400
+            
+            target = Combatant.query.get(target_id)
+            if not target:
+                return jsonify({'error': 'Invalid target'}), 400
+            
+            # Make attack with the same logic as regular attack
+            from combat import CombatEngine
+            weapon = None  # Use natural weapon for simplicity
+            attack_bonus = CombatEngine.calculate_weapon_attack_bonus(combatant.character, weapon)
+            target_ac = CombatEngine.calculate_ac(target.character)
+            
+            hit, attack_roll, critical = CombatEngine.make_attack_roll(attack_bonus, target_ac)
+            
+            if hit:
+                damage_info = CombatEngine.calculate_weapon_damage(combatant.character, weapon, critical)
+                damage_roll = CombatEngine.roll_dice(damage_info.dice_count, damage_info.dice_size, damage_info.modifier)
+                target.apply_damage(damage_roll)
+                result = {
+                    'hit': True,
+                    'attack_roll': attack_roll,
+                    'damage': damage_roll,
+                    'critical': critical
+                }
+            else:
+                result = {
+                    'hit': False,
+                    'attack_roll': attack_roll
+                }
+        
+        else:
+            # Generic reaction
+            result = {'reaction_performed': reaction_type}
+        
+        # Use reaction
+        combatant.has_reaction = False
+        db.session.commit()
+        
+        # Record the action
+        action = CombatAction(
+            combat_id=combat_id,
+            actor_id=combatant_id,
+            action_type=f'reaction_{reaction_type}',
+            round_number=Combat.query.get(combat_id).current_round,
+            action_data=json.dumps(trigger_data),
+            result=json.dumps(result)
+        )
+        db.session.add(action)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'reaction_type': reaction_type,
+            **result
+        })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
