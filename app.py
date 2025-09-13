@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from pynames import GENDER, LANGUAGE
@@ -693,9 +693,10 @@ def index():
 
 @app.route('/demo')
 def demo():
-    """Serve the demo.html file to showcase combat system improvements."""
-    with open('demo.html', 'r') as f:
-        return f.read()
+    """Serve the demo.html file safely with proper encoding."""
+    demo_path = os.path.join(app.root_path, 'demo.html')
+    # Use send_file to avoid manual decoding issues (handles binary safely)
+    return send_file(demo_path, mimetype='text/html; charset=utf-8')
 
 
 @app.route('/generate_name')
