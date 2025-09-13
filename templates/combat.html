@@ -1,0 +1,1349 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Combat Manager - D&D World Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+
+        .combat-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .combat-section h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .character-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .character-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .character-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
+        }
+
+        .character-card.selected {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+        }
+
+        .character-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+
+        .character-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #5a6fd8;
+        }
+
+        .btn-danger {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+
+        .btn-success {
+            background-color: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background-color: #229954;
+        }
+
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+
+        .btn-warning {
+            background-color: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background-color: #e67e22;
+        }
+
+        .combat-status {
+            display: none;
+        }
+
+        .combat-status.active {
+            display: block;
+        }
+
+        .combatant-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .combatant-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            position: relative;
+        }
+
+        .combatant-card.current-turn {
+            border-color: #f39c12;
+            background-color: #fef9e7;
+        }
+
+        .combatant-card.unconscious {
+            border-color: #e74c3c;
+            background-color: #fdf2f2;
+        }
+
+        .combatant-card.dead {
+            border-color: #000;
+            background-color: #f0f0f0;
+            opacity: 0.7;
+        }
+
+        .hp-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .hp-fill {
+            height: 100%;
+            background-color: #27ae60;
+            transition: width 0.3s ease;
+        }
+
+        .hp-fill.low {
+            background-color: #f39c12;
+        }
+
+        .hp-fill.critical {
+            background-color: #e74c3c;
+        }
+
+        .actions {
+            margin-top: 15px;
+        }
+
+        .actions button {
+            margin: 5px 5px 5px 0;
+        }
+
+        .combat-log {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px;
+        }
+
+        .log-hit {
+            color: #27ae60;
+        }
+
+        .log-miss {
+            color: #e74c3c;
+        }
+
+        .log-critical {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .conditions {
+            margin-top: 10px;
+        }
+
+        .condition-tag {
+            display: inline-block;
+            background-color: #e74c3c;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            margin: 2px;
+        }
+
+        .death-saves {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .death-saves .success {
+            color: #27ae60;
+        }
+
+        .death-saves .failure {
+            color: #e74c3c;
+        }
+
+        .initiative-order {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .initiative-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .initiative-item {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 8px 12px;
+            font-weight: bold;
+        }
+
+        .initiative-item.current {
+            background-color: #667eea;
+            color: white;
+        }
+
+        .error {
+            color: #e74c3c;
+            background-color: #fdf2f2;
+            border: 1px solid #e74c3c;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .success {
+            color: #27ae60;
+            background-color: #f2fdf2;
+            border: 1px solid #27ae60;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚔️ Combat Manager</h1>
+            <p>D&D 5e Turn-Based Combat System</p>
+        </div>
+
+        <div id="startCombatSection" class="combat-section">
+            <h2>Start New Combat</h2>
+            <div>
+                <label for="combatName">Combat Name:</label>
+                <input type="text" id="combatName" placeholder="Enter combat name" value="Test Combat">
+            </div>
+            <br>
+            <div id="characterSelection">
+                <h3>Select Characters for Combat:</h3>
+                <div id="charactersGrid" class="character-selector">
+                    <!-- Characters will be loaded here -->
+                </div>
+                <br>
+                <h3>Select Enemies (optional):</h3>
+                <div id="enemiesGrid" class="character-selector">
+                    <!-- Enemies will be loaded here -->
+                </div>
+                <br>
+                <button id="startCombatBtn" class="btn btn-primary" onclick="startCombat()">Start Combat</button>
+            </div>
+        </div>
+
+        <div id="combatStatus" class="combat-section combat-status">
+            <h2>Combat Status</h2>
+            <div id="combatInfo">
+                <!-- Combat info will be displayed here -->
+            </div>
+
+            <div id="initiativeOrder" class="initiative-order">
+                <h3>Initiative Order:</h3>
+                <div id="initiativeList" class="initiative-list">
+                    <!-- Initiative order will be displayed here -->
+                </div>
+            </div>
+
+            <div id="combatantsList" class="combatant-list">
+                <!-- Combatants will be displayed here -->
+            </div>
+
+            <div id="combatActions" style="margin-top: 20px;">
+                <button id="endTurnBtn" class="btn btn-primary" onclick="endTurn()">End Turn</button>
+                <button id="endCombatBtn" class="btn btn-danger" onclick="endCombat()">End Combat</button>
+            </div>
+
+            <div id="combatLogSection" style="margin-top: 20px;">
+                <h3>Combat Log:</h3>
+                <div id="combatLog" class="combat-log">
+                    <!-- Combat log will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let currentCombatId = null;
+        let selectedCharacters = new Set();
+        let selectedEnemies = new Set(); // store enemy names
+        let combatants = [];
+
+        // Load characters on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            loadCharacters();
+            loadEnemies();
+        });
+
+        async function loadCharacters() {
+            try {
+                const response = await fetch('/characters');
+                const html = await response.text();
+
+                // For now, we'll need to parse this differently
+                // Let's create a simple API endpoint for character data
+                const charactersResponse = await fetch('/api/characters');
+                if (charactersResponse.ok) {
+                    const characters = await charactersResponse.json();
+                    displayCharacters(characters);
+                } else {
+                    // Fallback: load from main characters page (simplified)
+                    showMessage('Please ensure you have created some characters first.', 'error');
+                }
+            } catch (error) {
+                showMessage('Error loading characters: ' + error.message, 'error');
+            }
+        }
+
+        function displayCharacters(characters) {
+            const grid = document.getElementById('charactersGrid');
+            grid.innerHTML = '';
+
+            characters.forEach(char => {
+                const card = document.createElement('div');
+                card.className = 'character-card';
+                card.dataset.characterId = char.id;
+                card.onclick = () => toggleCharacterSelection(char.id, card);
+
+                card.innerHTML = `
+                    <h3>${char.name}</h3>
+                    <div class="character-stats">
+                        <span>Class: ${char.character_class}</span>
+                        <span>Level: ${char.level}</span>
+                        <span>HP: ${char.current_hp}/${char.max_hp}</span>
+                        <span>AC: ${char.armor_class}</span>
+                    </div>
+                `;
+
+                grid.appendChild(card);
+            });
+        }
+
+        function toggleCharacterSelection(characterId, cardElement) {
+            if (selectedCharacters.has(characterId)) {
+                selectedCharacters.delete(characterId);
+                cardElement.classList.remove('selected');
+            } else {
+                selectedCharacters.add(characterId);
+                cardElement.classList.add('selected');
+            }
+        }
+
+        async function loadEnemies() {
+            try {
+                const response = await fetch('/api/enemies');
+                const result = await response.json();
+                if (response.ok && result && Array.isArray(result.enemies)) {
+                    displayEnemies(result.enemies);
+                } else {
+                    showMessage('Error loading enemies list.', 'error');
+                }
+            } catch (error) {
+                showMessage('Error loading enemies: ' + error.message, 'error');
+            }
+        }
+
+        function displayEnemies(enemies) {
+            const grid = document.getElementById('enemiesGrid');
+            grid.innerHTML = '';
+
+            enemies.forEach(enemy => {
+                const card = document.createElement('div');
+                card.className = 'character-card';
+                card.dataset.enemyName = enemy.name;
+                card.onclick = () => toggleEnemySelection(enemy.name, card);
+
+                card.innerHTML = `
+                    <h3>${enemy.name}</h3>
+                    <div class="character-stats">
+                        <span>Type: ${enemy.creature_type || '—'}</span>
+                        <span>CR: ${enemy.challenge_rating ?? '—'}</span>
+                        <span>HP: ${enemy.hit_points ?? '—'}</span>
+                        <span>AC: ${enemy.armor_class ?? '—'}</span>
+                    </div>
+                `;
+
+                grid.appendChild(card);
+            });
+        }
+
+        function toggleEnemySelection(enemyName, cardElement) {
+            if (selectedEnemies.has(enemyName)) {
+                selectedEnemies.delete(enemyName);
+                cardElement.classList.remove('selected');
+            } else {
+                selectedEnemies.add(enemyName);
+                cardElement.classList.add('selected');
+            }
+        }
+
+        async function startCombat() {
+            if (selectedCharacters.size === 0) {
+                showMessage('Please select at least one character for combat.', 'error');
+                return;
+            }
+
+            const combatName = document.getElementById('combatName').value || 'Combat Encounter';
+
+            try {
+                const response = await fetch('/combat/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: combatName,
+                        character_ids: Array.from(selectedCharacters)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    currentCombatId = result.combat_id;
+                    showMessage('Combat started successfully!', 'success');
+
+                    // If enemies were selected, add them now
+                    if (selectedEnemies.size > 0) {
+                        for (const enemyName of selectedEnemies) {
+                            try {
+                                const addRes = await fetch(`/combat/${currentCombatId}/add_enemy`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ enemy_name: enemyName })
+                                });
+                                const addResult = await addRes.json();
+                                if (addRes.ok) {
+                                    addToCombatLog(`Added enemy: ${addResult.name} (AC ${addResult.ac}, HP ${addResult.hp})`, '');
+                                } else {
+                                    showMessage('Failed to add enemy ' + enemyName + ': ' + (addResult.error || 'Unknown error'), 'error');
+                                }
+                            } catch (e) {
+                                showMessage('Failed to add enemy ' + enemyName + ': ' + e.message, 'error');
+                            }
+                        }
+                    }
+
+                    // Hide start section, show combat status
+                    document.getElementById('startCombatSection').style.display = 'none';
+                    document.getElementById('combatStatus').classList.add('active');
+
+                    // Load initial combat state
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error starting combat: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error starting combat: ' + error.message, 'error');
+            }
+        }
+
+        async function loadCombatStatus() {
+            if (!currentCombatId) return;
+
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/status`);
+                const result = await response.json();
+
+                if (response.ok) {
+                    updateCombatDisplay(result);
+                } else {
+                    showMessage('Error loading combat status: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error loading combat status: ' + error.message, 'error');
+            }
+        }
+
+        function updateCombatDisplay(combatData) {
+            // Update combat info
+            document.getElementById('combatInfo').innerHTML = `
+                <h3>${combatData.name}</h3>
+                <p>Round: ${combatData.round}</p>
+                <p>Current Turn: ${combatData.current_combatant_name || 'None'}</p>
+            `;
+
+            // Update initiative order
+            const initiativeList = document.getElementById('initiativeList');
+            initiativeList.innerHTML = '';
+
+            const sortedCombatants = combatData.combatants.sort((a, b) => b.initiative - a.initiative);
+            sortedCombatants.forEach((combatant, index) => {
+                const item = document.createElement('div');
+                item.className = 'initiative-item';
+                if (combatant.id === combatData.current_combatant_id) {
+                    item.classList.add('current');
+                }
+                item.innerHTML = `${combatant.character_name} (${combatant.initiative})`;
+                initiativeList.appendChild(item);
+            });
+
+            // Update combatants list
+            const combatantsList = document.getElementById('combatantsList');
+            combatantsList.innerHTML = '';
+
+            combatants = combatData.combatants;
+
+            combatants.forEach(combatant => {
+                const card = document.createElement('div');
+                card.className = 'combatant-card';
+
+                if (combatant.id === combatData.current_combatant_id) {
+                    card.classList.add('current-turn');
+                }
+                if (!combatant.is_conscious) {
+                    card.classList.add('unconscious');
+                }
+                if (combatant.is_dead) {
+                    card.classList.add('dead');
+                }
+
+                const hpPercentage = (combatant.current_hp / combatant.max_hp) * 100;
+                let hpClass = '';
+                if (hpPercentage <= 25) hpClass = 'critical';
+                else if (hpPercentage <= 50) hpClass = 'low';
+
+                let conditionTags = '';
+                if (combatant.conditions) {
+                    combatant.conditions.forEach(condition => {
+                        conditionTags += `<span class="condition-tag">${condition}</span>`;
+                    });
+                }
+
+                let deathSaves = '';
+                if (!combatant.is_conscious && !combatant.is_dead) {
+                    deathSaves = `
+                        <div class="death-saves">
+                            Death Saves: 
+                            <span class="success">${'●'.repeat(combatant.death_saves.successes)}</span>
+                            <span class="failure">${'●'.repeat(combatant.death_saves.failures)}</span>
+                            <button class="btn btn-primary" onclick="makeDeathSave(${combatant.id})">Roll Death Save</button>
+                        </div>
+                    `;
+                }
+
+                card.innerHTML = `
+                    <h3>${combatant.character_name}</h3>
+                    <p>Initiative: ${combatant.initiative} | AC: ${combatant.ac}</p>
+                    
+                    <div class="hp-bar">
+                        <div class="hp-fill ${hpClass}" style="width: ${Math.max(0, hpPercentage)}%"></div>
+                    </div>
+                    <p>HP: ${combatant.current_hp}/${combatant.max_hp} ${combatant.temp_hp > 0 ? `(+${combatant.temp_hp} temp)` : ''}</p>
+                    
+                    <div class="conditions">${conditionTags}</div>
+                    ${deathSaves}
+                    
+                    <div class="actions">
+                        <div style="margin-bottom: 10px;">
+                            <strong>Actions Available:</strong>
+                            <span style="color: ${combatant.has_action ? '#27ae60' : '#e74c3c'};">
+                                Action ${combatant.has_action ? '✓' : '✗'}
+                            </span>
+                            <span style="color: ${combatant.has_bonus_action ? '#27ae60' : '#e74c3c'};">
+                                Bonus ${combatant.has_bonus_action ? '✓' : '✗'}
+                            </span>
+                            <span style="color: ${combatant.has_reaction ? '#27ae60' : '#e74c3c'};">
+                                Reaction ${combatant.has_reaction ? '✓' : '✗'}
+                            </span>
+                        </div>
+                        
+                        <div style="margin-bottom: 5px;"><strong>Actions:</strong></div>
+                        <button class="btn btn-success" onclick="showAttackDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''}>Attack</button>
+                        <button class="btn btn-primary" onclick="showHealDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''} title="Only spellcasters can heal">Heal</button>
+                        <button class="btn btn-secondary" onclick="showThrowDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''}>Throw Item</button>
+                        
+                        <div style="margin: 10px 0 5px 0;"><strong>Bonus Actions:</strong></div>
+                        <button class="btn btn-warning" onclick="showBonusActionDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_bonus_action ? 'disabled' : ''}>Bonus Action</button>
+                        
+                        <div style="margin: 10px 0 5px 0;"><strong>Reactions:</strong></div>
+                        <button class="btn" style="background: #17a2b8; color: white;" onclick="showReactionDialog(${combatant.id})" ${!combatant.has_reaction ? 'disabled' : ''}>Reaction</button>
+                    </div>
+                `;
+
+                combatantsList.appendChild(card);
+            });
+        }
+
+        async function makeAttack(attackerId, targetId) {
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/attack`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        attacker_id: attackerId,
+                        target_id: targetId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const attacker = combatants.find(c => c.id === attackerId);
+                    const target = combatants.find(c => c.id === targetId);
+
+                    let logMessage = `${attacker.character_name} attacks ${target.character_name}: `;
+                    if (result.hit) {
+                        logMessage += `HIT! (${result.attack_roll}) for ${result.damage} ${result.damage_type} damage`;
+                        if (result.critical) {
+                            logMessage = `CRITICAL HIT! ` + logMessage;
+                        }
+                        addToCombatLog(logMessage, result.critical ? 'log-critical' : 'log-hit');
+                    } else {
+                        logMessage += `MISS (${result.attack_roll})`;
+                        addToCombatLog(logMessage, 'log-miss');
+                    }
+
+                    // Reload combat status
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error making attack: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error making attack: ' + error.message, 'error');
+            }
+        }
+
+        async function makeDeathSave(combatantId) {
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/death_save`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        combatant_id: combatantId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    addToCombatLog(result.message, result.death_save_success ? 'log-hit' : 'log-miss');
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error making death save: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error making death save: ' + error.message, 'error');
+            }
+        }
+
+        async function endTurn() {
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/end_turn`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    addToCombatLog('Turn ended.', '');
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error ending turn: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error ending turn: ' + error.message, 'error');
+            }
+        }
+
+        function endCombat() {
+            if (confirm('Are you sure you want to end this combat?')) {
+                currentCombatId = null;
+                document.getElementById('startCombatSection').style.display = 'block';
+                document.getElementById('combatStatus').classList.remove('active');
+                selectedCharacters.clear();
+
+                // Reset character selection
+                document.querySelectorAll('.character-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+
+                showMessage('Combat ended.', 'success');
+            }
+        }
+
+        function showAttackDialog(attackerId) {
+            const targets = combatants.filter(c => c.id !== attackerId && c.is_conscious);
+
+            if (targets.length === 0) {
+                showMessage('No valid targets available.', 'error');
+                return;
+            }
+
+            let targetOptions = targets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 1000;
+            `;
+
+            dialog.innerHTML = `
+                <h3>Select Attack Target</h3>
+                <select id="targetSelect">${targetOptions}</select>
+                <br><br>
+                <button class="btn btn-success" onclick="confirmAttack(${attackerId})">Attack</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 999;
+            `;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        function showHealDialog(targetId) {
+            // Get list of spellcasters who can heal
+            const healingClasses = ['cleric', 'bard', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', 'artificer'];
+            const spellcasters = combatants.filter(c =>
+                c.is_conscious && healingClasses.includes(c.character_class.toLowerCase())
+            );
+
+            if (spellcasters.length === 0) {
+                showMessage('No conscious spellcasters available to cast healing spells.', 'error');
+                return;
+            }
+
+            let healerOptions = spellcasters.map(c =>
+                `<option value="${c.id}">${c.character_name} (${c.character_class})</option>`
+            ).join('');
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 1000;
+            `;
+
+            dialog.innerHTML = `
+                <h3>Cast Healing Spell</h3>
+                <label>Healer:</label>
+                <select id="healerSelect">${healerOptions}</select>
+                <br><br>
+                <label>Healing Amount:</label>
+                <input type="number" id="healAmount" min="1" value="1">
+                <br><br>
+                <button class="btn btn-success" onclick="confirmHeal(${targetId})">Cast Heal</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 999;
+            `;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        async function confirmAttack(attackerId) {
+            const targetId = parseInt(document.getElementById('targetSelect').value);
+            closeDialog();
+            await makeAttack(attackerId, targetId);
+        }
+
+        async function confirmHeal(targetId) {
+            const healerId = parseInt(document.getElementById('healerSelect').value);
+            const healing = parseInt(document.getElementById('healAmount').value);
+            closeDialog();
+
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/heal`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        combatant_id: targetId,
+                        healer_id: healerId,
+                        healing: healing
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const target = combatants.find(c => c.id === targetId);
+                    addToCombatLog(`${result.healer_name} healed ${target.character_name} for ${result.healing_applied} HP`, 'log-hit');
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error casting healing spell: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error casting healing spell: ' + error.message, 'error');
+            }
+        }
+
+        function showThrowDialog(throwerId) {
+            // Get the thrower's inventory
+            const thrower = combatants.find(c => c.id === throwerId);
+            if (!thrower) {
+                showMessage('Thrower not found.', 'error');
+                return;
+            }
+
+            // For now, we'll get throwable items from a predefined list
+            // In a full implementation, this would fetch the character's inventory
+            const throwableItems = [
+                { id: 'acid_vial', name: 'Acid (vial)', damage: '2d6 acid' },
+                { id: 'alchemist_fire', name: 'Alchemist\'s fire (flask)', damage: '1d4 fire' },
+                { id: 'holy_water', name: 'Holy water (flask)', damage: '2d6 radiant vs undead/fiends' },
+                { id: 'dagger', name: 'Dagger', damage: '1d4 piercing' },
+                { id: 'javelin', name: 'Javelin', damage: '1d6 piercing' },
+                { id: 'healing_potion', name: 'Potion of healing', effect: 'Heal 2d4+2 HP' }
+            ];
+
+            const targets = combatants.filter(c => c.id !== throwerId && c.is_conscious);
+
+            if (targets.length === 0) {
+                showMessage('No valid targets available.', 'error');
+                return;
+            }
+
+            let itemOptions = throwableItems.map(item =>
+                `<option value="${item.id}">${item.name} ${item.damage ? '(' + item.damage + ')' : ''} ${item.effect ? '(' + item.effect + ')' : ''}</option>`
+            ).join('');
+
+            let targetOptions = targets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 1000; width: 350px;
+            `;
+
+            dialog.innerHTML = `
+                <h3>Throw Item</h3>
+                <label>Item to throw:</label>
+                <select id="throwItemSelect">${itemOptions}</select>
+                <br><br>
+                <label>Target:</label>
+                <select id="throwTargetSelect">${targetOptions}</select>
+                <br><br>
+                <button class="btn btn-success" onclick="confirmThrow(${throwerId})">Throw</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 999;
+            `;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        async function confirmThrow(throwerId) {
+            const itemId = document.getElementById('throwItemSelect').value;
+            const targetId = parseInt(document.getElementById('throwTargetSelect').value);
+            closeDialog();
+
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/throw`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        thrower_id: throwerId,
+                        target_id: targetId,
+                        item_id: itemId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const thrower = combatants.find(c => c.id === throwerId);
+                    const target = combatants.find(c => c.id === targetId);
+                    const itemName = document.getElementById('throwItemSelect').selectedOptions[0].text.split(' (')[0];
+
+                    let logMessage = `${thrower.character_name} throws ${itemName} at ${target.character_name}: `;
+                    if (result.hit) {
+                        if (result.damage > 0) {
+                            logMessage += `HIT! (${result.attack_roll}) for ${result.damage} ${result.damage_type} damage`;
+                        } else {
+                            logMessage += `HIT! (${result.attack_roll})`;
+                        }
+                        if (result.effect_message) {
+                            logMessage += result.effect_message;
+                        }
+                        if (result.critical) {
+                            logMessage = `CRITICAL HIT! ` + logMessage;
+                        }
+                        addToCombatLog(logMessage, result.critical ? 'log-critical' : 'log-hit');
+                    } else {
+                        logMessage += `MISS (${result.attack_roll})`;
+                        addToCombatLog(logMessage, 'log-miss');
+                    }
+
+                    if (result.item_consumed) {
+                        addToCombatLog(`${itemName} was consumed in the throw.`, '');
+                    }
+
+                    // Reload combat status
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error throwing item: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error throwing item: ' + error.message, 'error');
+            }
+        }
+
+        function showBonusActionDialog(combatantId) {
+            const combatant = combatants.find(c => c.id === combatantId);
+            if (!combatant) {
+                showMessage('Combatant not found.', 'error');
+                return;
+            }
+
+            // Define available bonus actions based on class
+            let availableActions = [];
+
+            const characterClass = combatant.character_class.toLowerCase();
+
+            // Class-specific bonus actions
+            if (['cleric', 'bard', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', 'artificer'].includes(characterClass)) {
+                availableActions.push({ id: 'healing_word', name: 'Healing Word', description: 'Bonus action healing spell' });
+            }
+
+            if (characterClass === 'fighter') {
+                availableActions.push({ id: 'second_wind', name: 'Second Wind', description: 'Regain hit points' });
+            }
+
+            if (characterClass === 'rogue') {
+                availableActions.push({ id: 'cunning_action', name: 'Cunning Action', description: 'Dash, Disengage, or Hide' });
+            }
+
+            // Generic bonus actions available to all
+            availableActions.push({ id: 'generic', name: 'Other Bonus Action', description: 'Use any other bonus action' });
+
+            if (availableActions.length === 0) {
+                showMessage('No bonus actions available for this character.', 'error');
+                return;
+            }
+
+            let actionOptions = availableActions.map(action =>
+                `<option value="${action.id}">${action.name} - ${action.description}</option>`
+            ).join('');
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 1000; width: 400px;
+            `;
+
+            dialog.innerHTML = `
+                <h3>Use Bonus Action</h3>
+                <label>Select Bonus Action:</label>
+                <select id="bonusActionSelect">${actionOptions}</select>
+                <br><br>
+                <div id="bonusActionDetails" style="margin: 10px 0;">
+                    Select an action to see details.
+                </div>
+                <button class="btn btn-warning" onclick="confirmBonusAction(${combatantId})">Use Bonus Action</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // Add change listener for action details
+            document.getElementById('bonusActionSelect').addEventListener('change', function () {
+                updateBonusActionDetails();
+            });
+
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 999;
+            `;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        function updateBonusActionDetails() {
+            const select = document.getElementById('bonusActionSelect');
+            const detailsDiv = document.getElementById('bonusActionDetails');
+            const selectedAction = select.value;
+
+            switch (selectedAction) {
+                case 'healing_word':
+                    detailsDiv.innerHTML = `
+                        <strong>Healing Word:</strong> Cast a bonus action healing spell.<br>
+                        <label>Target (optional - self if none):</label>
+                        <select id="healingTarget">
+                            <option value="">Self</option>
+                            ${combatants.filter(c => c.is_conscious).map(c =>
+                        `<option value="${c.id}">${c.character_name}</option>`
+                    ).join('')}
+                        </select><br>
+                        <label>Healing Amount:</label>
+                        <input type="number" id="healingAmount" value="4" min="1">
+                    `;
+                    break;
+                case 'second_wind':
+                    detailsDiv.innerHTML = '<strong>Second Wind:</strong> Regain hit points equal to 1d10 + your fighter level.';
+                    break;
+                case 'cunning_action':
+                    detailsDiv.innerHTML = `
+                        <strong>Cunning Action:</strong> Take Dash, Disengage, or Hide action.<br>
+                        <select id="cunningActionType">
+                            <option value="dash">Dash</option>
+                            <option value="disengage">Disengage</option>
+                            <option value="hide">Hide</option>
+                        </select>
+                    `;
+                    break;
+                default:
+                    detailsDiv.innerHTML = 'Generic bonus action.';
+            }
+        }
+
+        async function confirmBonusAction(combatantId) {
+            const actionType = document.getElementById('bonusActionSelect').value;
+            let actionData = {};
+
+            // Gather action-specific data
+            if (actionType === 'healing_word') {
+                const targetSelect = document.getElementById('healingTarget');
+                const healingInput = document.getElementById('healingAmount');
+                actionData = {
+                    target_id: targetSelect.value || combatantId,
+                    healing: parseInt(healingInput.value) || 4
+                };
+            } else if (actionType === 'cunning_action') {
+                const typeSelect = document.getElementById('cunningActionType');
+                actionData = {
+                    cunning_type: typeSelect.value
+                };
+            }
+
+            closeDialog();
+
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/bonus_action`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        combatant_id: combatantId,
+                        action_type: actionType,
+                        action_data: actionData
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const combatant = combatants.find(c => c.id === combatantId);
+                    addToCombatLog(`${combatant.character_name} used bonus action: ${actionType}`, 'log-hit');
+
+                    if (result.target_name && result.healing_applied) {
+                        addToCombatLog(`${result.target_name} healed for ${result.healing_applied} HP`, 'log-hit');
+                    } else if (result.self_healing) {
+                        addToCombatLog(`${combatant.character_name} healed for ${result.self_healing} HP`, 'log-hit');
+                    }
+
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error using bonus action: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error using bonus action: ' + error.message, 'error');
+            }
+        }
+
+        function showReactionDialog(combatantId) {
+            const combatant = combatants.find(c => c.id === combatantId);
+            if (!combatant) {
+                showMessage('Combatant not found.', 'error');
+                return;
+            }
+
+            // Define available reactions
+            const availableReactions = [
+                { id: 'opportunity_attack', name: 'Opportunity Attack', description: 'Attack when an enemy leaves your reach' },
+                { id: 'counterspell', name: 'Counterspell', description: 'Counter an enemy spell (spellcasters only)' },
+                { id: 'generic', name: 'Other Reaction', description: 'Use any other reaction' }
+            ];
+
+            const validTargets = combatants.filter(c => c.id !== combatantId && c.is_conscious);
+
+            let reactionOptions = availableReactions.map(reaction =>
+                `<option value="${reaction.id}">${reaction.name} - ${reaction.description}</option>`
+            ).join('');
+
+            let targetOptions = validTargets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 1000; width: 400px;
+            `;
+
+            dialog.innerHTML = `
+                <h3>Use Reaction</h3>
+                <label>Select Reaction:</label>
+                <select id="reactionSelect">${reactionOptions}</select>
+                <br><br>
+                <div id="reactionTarget" style="margin: 10px 0;">
+                    <label>Target:</label>
+                    <select id="reactionTargetSelect">${targetOptions}</select>
+                </div>
+                <button class="btn" style="background: #17a2b8; color: white;" onclick="confirmReaction(${combatantId})">Use Reaction</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+
+            document.body.appendChild(dialog);
+
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.5); z-index: 999;
+            `;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        async function confirmReaction(combatantId) {
+            const reactionType = document.getElementById('reactionSelect').value;
+            const targetId = parseInt(document.getElementById('reactionTargetSelect').value);
+
+            closeDialog();
+
+            try {
+                const response = await fetch(`/combat/${currentCombatId}/reaction`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        combatant_id: combatantId,
+                        reaction_type: reactionType,
+                        trigger_data: {
+                            target_id: targetId
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const combatant = combatants.find(c => c.id === combatantId);
+                    const target = combatants.find(c => c.id === targetId);
+
+                    let logMessage = `${combatant.character_name} used reaction: ${reactionType}`;
+                    if (target) {
+                        logMessage += ` against ${target.character_name}`;
+                    }
+
+                    if (result.hit !== undefined) {
+                        if (result.hit) {
+                            logMessage += ` - HIT! (${result.attack_roll}) for ${result.damage} damage`;
+                            if (result.critical) {
+                                logMessage = `CRITICAL HIT! ` + logMessage;
+                            }
+                            addToCombatLog(logMessage, result.critical ? 'log-critical' : 'log-hit');
+                        } else {
+                            logMessage += ` - MISS (${result.attack_roll})`;
+                            addToCombatLog(logMessage, 'log-miss');
+                        }
+                    } else {
+                        addToCombatLog(logMessage, 'log-hit');
+                    }
+
+                    await loadCombatStatus();
+                } else {
+                    showMessage('Error using reaction: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Error using reaction: ' + error.message, 'error');
+            }
+        }
+
+        function closeDialog() {
+            const dialog = document.getElementById('activeDialog');
+            if (dialog) {
+                if (dialog.overlay) {
+                    document.body.removeChild(dialog.overlay);
+                }
+                document.body.removeChild(dialog);
+            }
+        }
+
+        function addToCombatLog(message, className = '') {
+            const log = document.getElementById('combatLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${className}`;
+            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function showMessage(message, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            messagesDiv.appendChild(messageDiv);
+
+            setTimeout(() => {
+                messagesDiv.removeChild(messageDiv);
+            }, 5000);
+        }
+    </script>
+</body>
+
+</html>
