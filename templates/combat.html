@@ -328,6 +328,57 @@
             color: #555;
             margin-top: 6px;
         }
+
+        .spatial-hud {
+            display: flex;
+            gap: 16px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .hud-card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .hud-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .help-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .help-box {
+            max-width: 520px;
+            background: #1f2937;
+            padding: 16px;
+            border-radius: 8px;
+            line-height: 1.5;
+        }
+
+        .kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #374151;
+            border: 1px solid #4b5563;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
     </style>
 </head>
 
@@ -380,9 +431,37 @@
             <!-- Spatial Combat Section -->
             <div id="spatialSection" class="spatial-section">
                 <h3>Spatial Combat</h3>
-                <canvas id="spatialCanvas" width="800" height="600"></canvas>
-                <div class="spatial-legend">
-                    Click current unit to select. Click a tile within 6 to move. Click adjacent enemy to attack.
+                <div style="position: relative; display: inline-block;">
+                    <canvas id="spatialCanvas" width="800" height="600"></canvas>
+                    <div id="spatialHelp" class="help-overlay">
+                        <div class="help-box">
+                            <div style="font-size: 1.1em; font-weight: 600; margin-bottom: 8px;">Controls & Tips</div>
+                            <ul style="margin: 0 0 8px 18px;">
+                                <li>Click current unit to select.</li>
+                                <li>Click a highlighted tile (yellow) within range (<= 6) to move.</li>
+                                <li>Click an adjacent enemy to perform a melee attack.</li>
+                            </ul>
+                            <div><span class="kbd">H</span> toggle help • <span class="kbd">R</span> toggle range •
+                                <span class="kbd">E</span> end turn
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="spatial-legend">Click current unit to select. Range-highlight shows reachable tiles. Use
+                    keyboard: H (help), R (range), E (end turn).</div>
+                <div class="spatial-hud">
+                    <div class="hud-card">
+                        <div class="hud-title">Current Turn</div>
+                        <div id="hudCurrent">—</div>
+                    </div>
+                    <div class="hud-card">
+                        <div class="hud-title">Movement</div>
+                        <div id="hudMove">—</div>
+                    </div>
+                    <div class="hud-card">
+                        <div class="hud-title">Last Attack</div>
+                        <div id="hudAttack">—</div>
+                    </div>
                 </div>
             </div>
 
@@ -410,6 +489,8 @@
         // Spatial state
         const TILE = 40; // px per tile
         let spatial = { grid: { cols: 20, rows: 15 }, positions: {}, currentId: null, roster: [], selectedId: null };
+        let showRange = true;
+        let lastAttack = null; // {attacker, target, roll, damage, hit, critical}
 
         // Load characters on page load
         document.addEventListener('DOMContentLoaded', function () {
@@ -621,6 +702,28 @@
                 initiativeList.appendChild(item);
             });
 
+            // HUD update
+            document.getElementById('hudCurrent').textContent = combatData.current_combatant_name || '—';
+            const current = combatData.combatants.find(c => c.id === combatData.current_combatant_id);
+            if (current) {
+                document.getElementById('hudMove').textContent = current.has_movement ? 'Available (<= 6 tiles)' : 'Spent';
+            } else {
+                document.getElementById('hudMove').textContent = '—';
+            }
+            if (lastAttack) {
+                const parts = [];
+                if (lastAttack.hit) {
+                    parts.push(`HIT ${lastAttack.roll}`);
+                    parts.push(`${lastAttack.damage} dmg`);
+                    if (lastAttack.critical) parts.push('CRIT');
+                } else {
+                    parts.push(`MISS ${lastAttack.roll}`);
+                }
+                document.getElementById('hudAttack').textContent = `${lastAttack.attacker} → ${lastAttack.target}: ${parts.join(' · ')}`;
+            } else {
+                document.getElementById('hudAttack').textContent = '—';
+            }
+
             // Update combatants list
             const combatantsList = document.getElementById('combatantsList');
             combatantsList.innerHTML = '';
@@ -831,6 +934,22 @@
                 ctx.stroke();
             }
 
+            // Highlight move range for selected current unit
+            if (showRange && spatial.selectedId && spatial.selectedId === spatial.currentId) {
+                const sel = spatial.roster.find(u => u.id === spatial.selectedId);
+                if (sel) {
+                    ctx.fillStyle = 'rgba(241, 196, 15, 0.25)'; // yellow translucent
+                    for (let y = 0; y < spatial.grid.rows; y++) {
+                        for (let x = 0; x < spatial.grid.cols; x++) {
+                            const dist = Math.abs(sel.x - x) + Math.abs(sel.y - y);
+                            if (dist > 0 && dist <= 6 && !isOccupied(x, y)) {
+                                ctx.fillRect(x * TILE + 2, y * TILE + 2, TILE - 4, TILE - 4);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Draw tokens
             for (const unit of spatial.roster) {
                 const x = unit.x * TILE + TILE / 2;
@@ -862,6 +981,10 @@
                 ctx.fillStyle = pct < 0.25 ? '#e74c3c' : pct < 0.5 ? '#f39c12' : '#27ae60';
                 ctx.fillRect(hpX, hpY, hpw * pct, hph);
             }
+        }
+
+        function isOccupied(x, y) {
+            return spatial.roster.some(u => u.x === x && u.y === y);
         }
 
         canvas.addEventListener('click', async (evt) => {
@@ -896,7 +1019,12 @@
 
             // Otherwise, try to move selected current unit
             if (spatial.selectedId && spatial.selectedId === spatial.currentId) {
-                await doSpatialMove(spatial.selectedId, gx, gy);
+                // Must be within 6 and not occupied
+                const sel = spatial.roster.find(u => u.id === spatial.selectedId);
+                const dist = Math.abs(sel.x - gx) + Math.abs(sel.y - gy);
+                if (dist >= 1 && dist <= 6 && !isOccupied(gx, gy)) {
+                    await doSpatialMove(spatial.selectedId, gx, gy);
+                }
             }
         });
 
@@ -940,12 +1068,35 @@
                     logMessage += `MISS (${result.attack_roll})`;
                     addToCombatLog(logMessage, 'log-miss');
                 }
+                lastAttack = {
+                    attacker: attacker.character_name,
+                    target: target.character_name,
+                    roll: result.attack_roll,
+                    damage: result.damage,
+                    hit: result.hit,
+                    critical: result.critical
+                };
                 await refreshSpatial();
                 await loadCombatStatus();
             } catch (e) {
                 showMessage('Error attacking: ' + e.message, 'error');
             }
         }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', async (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'h') {
+                const help = document.getElementById('spatialHelp');
+                help.style.display = (help.style.display === 'flex') ? 'none' : 'flex';
+                if (help.style.display === '') help.style.display = 'flex';
+            } else if (key === 'r') {
+                showRange = !showRange;
+                drawSpatial();
+            } else if (key === 'e') {
+                await endTurn();
+            }
+        });
 
         function endCombat() {
             if (confirm('Are you sure you want to end this combat?')) {
