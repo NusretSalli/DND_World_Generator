@@ -47,6 +47,119 @@
             border-bottom: 2px solid #eee;
             padding-bottom: 10px;
         }
+        
+        /* Spatial Combat Styles */
+        .spatial-combat-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .spatial-grid {
+            flex: 1;
+            border: 2px solid #333;
+            background: #f9f9f9;
+            position: relative;
+            min-height: 400px;
+        }
+        
+        .grid-cell {
+            position: absolute;
+            border: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        
+        .grid-cell:hover {
+            background-color: rgba(255, 255, 0, 0.3);
+        }
+        
+        .grid-cell.open { background-color: #f5f5dc; }
+        .grid-cell.difficult { background-color: #8b7765; }
+        .grid-cell.blocking { background-color: #696969; }
+        .grid-cell.partial_cover { background-color: #9acd32; }
+        .grid-cell.full_cover { background-color: #228b22; }
+        .grid-cell.water { background-color: #6495ed; }
+        .grid-cell.pit { background-color: #191919; }
+        .grid-cell.elevated { background-color: #d2b48c; }
+        
+        .grid-cell.movement-range {
+            background-color: rgba(100, 200, 100, 0.6) !important;
+        }
+        
+        .grid-cell.attack-range {
+            background-color: rgba(200, 100, 100, 0.6) !important;
+        }
+        
+        .grid-cell.selected {
+            background-color: rgba(255, 255, 0, 0.8) !important;
+            box-shadow: 0 0 5px rgba(255, 255, 0, 1);
+        }
+        
+        .combatant-token {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 10px;
+            color: white;
+            cursor: pointer;
+            z-index: 10;
+        }
+        
+        .combatant-token.player { background-color: #0064c8; }
+        .combatant-token.enemy { background-color: #c83232; }
+        .combatant-token.selected { 
+            box-shadow: 0 0 8px rgba(255, 255, 0, 1);
+            border-color: #ffff00;
+        }
+        
+        .spatial-controls {
+            width: 300px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .terrain-legend {
+            margin-top: 15px;
+        }
+        
+        .terrain-legend h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border: 1px solid #333;
+            margin-right: 8px;
+        }
+        
+        .spatial-buttons {
+            margin-top: 15px;
+        }
+        
+        .spatial-buttons button {
+            width: 100%;
+            margin-bottom: 8px;
+        }
 
         .character-selector {
             display: grid;
@@ -369,6 +482,78 @@
                 <h3>Combat Log:</h3>
                 <div id="combatLog" class="combat-log">
                     <!-- Combat log will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Spatial Combat Section -->
+        <div id="spatialCombatSection" class="combat-section combat-status">
+            <h2>Spatial Combat Grid</h2>
+            <div style="margin-bottom: 15px;">
+                <button id="createSpatialBtn" class="btn btn-success" onclick="createSpatialCombat()">Enable Spatial Combat</button>
+                <button id="launchVisualBtn" class="btn btn-primary" onclick="launchVisualInterface()" style="display: none;">Launch Pygame Interface</button>
+                <button id="closeSpatialBtn" class="btn btn-danger" onclick="closeSpatialCombat()" style="display: none;">Disable Spatial</button>
+            </div>
+            
+            <div id="spatialCombatContainer" class="spatial-combat-container" style="display: none;">
+                <div class="spatial-grid" id="spatialGrid">
+                    <!-- Grid will be rendered here -->
+                </div>
+                
+                <div class="spatial-controls">
+                    <h3>Spatial Controls</h3>
+                    <div id="selectedCombatantInfo">
+                        <p>Click a combatant to select</p>
+                    </div>
+                    
+                    <div class="spatial-buttons">
+                        <button class="btn btn-primary" onclick="showMovementRange()">Show Movement</button>
+                        <button class="btn btn-warning" onclick="showAttackRange()">Show Attack Range</button>
+                        <button class="btn btn-secondary" onclick="clearHighlights()">Clear Highlights</button>
+                    </div>
+                    
+                    <div class="terrain-legend">
+                        <h4>Terrain Legend</h4>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #f5f5dc;"></div>
+                            <span>Open</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #8b7765;"></div>
+                            <span>Difficult (2x cost)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #696969;"></div>
+                            <span>Blocking</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #9acd32;"></div>
+                            <span>Partial Cover (+2 AC)</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #228b22;"></div>
+                            <span>Full Cover</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #6495ed;"></div>
+                            <span>Water</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #d2b48c;"></div>
+                            <span>Elevated</span>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <h4>Terrain Templates</h4>
+                        <select id="terrainTemplate" class="form-control">
+                            <option value="">Select Template</option>
+                            <option value="dungeon_room">Dungeon Room</option>
+                            <option value="forest_clearing">Forest Clearing</option>
+                            <option value="castle_courtyard">Castle Courtyard</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="applyTerrainTemplate()" style="width: 100%; margin-top: 5px;">Apply Template</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1342,6 +1527,329 @@
             setTimeout(() => {
                 messagesDiv.removeChild(messageDiv);
             }, 5000);
+        }
+
+        // Spatial Combat Functions
+        let spatialCombatData = null;
+        let selectedSpatialCombatant = null;
+        let gridCellSize = 25; // pixels
+        let showingMovement = false;
+        let showingAttack = false;
+
+        async function createSpatialCombat() {
+            if (!currentCombatId) {
+                showMessage('No active combat to enable spatial mode', 'error');
+                return;
+            }
+
+            try {
+                const templateSelect = document.getElementById('terrainTemplate');
+                const selectedTemplate = templateSelect.value;
+                
+                let terrainSetup = null;
+                if (selectedTemplate) {
+                    // Get the template data
+                    const templatesResponse = await fetch('/api/spatial_combat/templates');
+                    const templatesData = await templatesResponse.json();
+                    if (templatesData.success && templatesData.templates[selectedTemplate]) {
+                        terrainSetup = templatesData.templates[selectedTemplate];
+                    }
+                }
+
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        width: 20,
+                        height: 15,
+                        terrain_setup: terrainSetup
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    spatialCombatData = result.grid_data;
+                    document.getElementById('spatialCombatContainer').style.display = 'flex';
+                    document.getElementById('createSpatialBtn').style.display = 'none';
+                    document.getElementById('launchVisualBtn').style.display = 'inline-block';
+                    document.getElementById('closeSpatialBtn').style.display = 'inline-block';
+                    
+                    renderSpatialGrid();
+                    showMessage('Spatial combat enabled!', 'success');
+                } else {
+                    showMessage(`Failed to create spatial combat: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error creating spatial combat:', error);
+                showMessage('Error creating spatial combat', 'error');
+            }
+        }
+
+        async function launchVisualInterface() {
+            if (!currentCombatId) {
+                showMessage('No active combat', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/visual`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showMessage('Pygame visual interface launched in separate window!', 'success');
+                } else {
+                    showMessage(`Failed to launch visual interface: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error launching visual interface:', error);
+                showMessage('Error launching visual interface', 'error');
+            }
+        }
+
+        async function closeSpatialCombat() {
+            if (!currentCombatId) return;
+
+            // Close visual interface if running
+            try {
+                await fetch(`/api/spatial_combat/${currentCombatId}/visual`, {
+                    method: 'DELETE',
+                });
+            } catch (error) {
+                console.error('Error closing visual interface:', error);
+            }
+
+            // Reset UI
+            document.getElementById('spatialCombatContainer').style.display = 'none';
+            document.getElementById('createSpatialBtn').style.display = 'inline-block';
+            document.getElementById('launchVisualBtn').style.display = 'none';
+            document.getElementById('closeSpatialBtn').style.display = 'none';
+            
+            spatialCombatData = null;
+            selectedSpatialCombatant = null;
+            showMessage('Spatial combat disabled', 'info');
+        }
+
+        function renderSpatialGrid() {
+            if (!spatialCombatData) return;
+
+            const gridContainer = document.getElementById('spatialGrid');
+            gridContainer.innerHTML = '';
+
+            const grid = spatialCombatData.grid;
+            const gridWidth = grid.width * gridCellSize;
+            const gridHeight = grid.height * gridCellSize;
+            
+            gridContainer.style.width = `${gridWidth}px`;
+            gridContainer.style.height = `${gridHeight}px`;
+
+            // Render terrain
+            for (let y = 0; y < grid.height; y++) {
+                for (let x = 0; x < grid.width; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    
+                    const terrain = grid.terrain[y][x];
+                    cell.classList.add(terrain.type);
+                    
+                    cell.style.left = `${x * gridCellSize}px`;
+                    cell.style.top = `${y * gridCellSize}px`;
+                    cell.style.width = `${gridCellSize}px`;
+                    cell.style.height = `${gridCellSize}px`;
+                    
+                    if (terrain.description) {
+                        cell.title = terrain.description;
+                    }
+                    
+                    cell.onclick = () => handleGridCellClick(x, y);
+                    
+                    gridContainer.appendChild(cell);
+                }
+            }
+
+            // Render combatants
+            spatialCombatData.combatants.forEach(combatant => {
+                if (combatant.position) {
+                    const token = document.createElement('div');
+                    token.className = 'combatant-token';
+                    token.dataset.combatantId = combatant.id;
+                    
+                    // Determine if player or enemy (simplified)
+                    const isPlayer = true; // Could be determined by character ownership
+                    token.classList.add(isPlayer ? 'player' : 'enemy');
+                    
+                    token.style.left = `${combatant.position.x * gridCellSize + 2}px`;
+                    token.style.top = `${combatant.position.y * gridCellSize + 2}px`;
+                    
+                    token.textContent = combatant.character_name.charAt(0).toUpperCase();
+                    token.title = `${combatant.character_name} (${combatant.current_hp}/${combatant.max_hp} HP)`;
+                    
+                    token.onclick = (e) => {
+                        e.stopPropagation();
+                        selectSpatialCombatant(combatant.id);
+                    };
+                    
+                    gridContainer.appendChild(token);
+                }
+            });
+        }
+
+        function selectSpatialCombatant(combatantId) {
+            // Clear previous selection
+            document.querySelectorAll('.combatant-token.selected').forEach(token => {
+                token.classList.remove('selected');
+            });
+            
+            // Select new combatant
+            const token = document.querySelector(`[data-combatant-id="${combatantId}"]`);
+            if (token) {
+                token.classList.add('selected');
+                selectedSpatialCombatant = combatantId;
+                
+                const combatant = spatialCombatData.combatants.find(c => c.id == combatantId);
+                if (combatant) {
+                    document.getElementById('selectedCombatantInfo').innerHTML = `
+                        <h4>Selected: ${combatant.character_name}</h4>
+                        <p>HP: ${combatant.current_hp}/${combatant.max_hp}</p>
+                        <p>AC: ${combatant.ac}</p>
+                        <p>Position: (${combatant.position.x}, ${combatant.position.y})</p>
+                    `;
+                }
+            }
+        }
+
+        async function handleGridCellClick(x, y) {
+            if (!selectedSpatialCombatant) return;
+
+            try {
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/move`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        combatant_id: selectedSpatialCombatant,
+                        target_x: x,
+                        target_y: y,
+                        movement_speed: 30
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showMessage(result.message, 'success');
+                    await refreshSpatialCombat();
+                } else {
+                    showMessage(`Movement failed: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error moving combatant:', error);
+                showMessage('Error moving combatant', 'error');
+            }
+        }
+
+        async function showMovementRange() {
+            if (!selectedSpatialCombatant) {
+                showMessage('Select a combatant first', 'warning');
+                return;
+            }
+
+            clearHighlights();
+            showingMovement = true;
+
+            try {
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/valid_moves/${selectedSpatialCombatant}?movement_speed=30`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    result.valid_moves.forEach(pos => {
+                        const cell = document.querySelector(`[data-x="${pos.x}"][data-y="${pos.y}"]`);
+                        if (cell) {
+                            cell.classList.add('movement-range');
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error getting movement range:', error);
+            }
+        }
+
+        async function showAttackRange() {
+            if (!selectedSpatialCombatant) {
+                showMessage('Select a combatant first', 'warning');
+                return;
+            }
+
+            clearHighlights();
+            showingAttack = true;
+
+            try {
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/attack_range/${selectedSpatialCombatant}?weapon_range=25`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    result.attack_range.forEach(pos => {
+                        const cell = document.querySelector(`[data-x="${pos.x}"][data-y="${pos.y}"]`);
+                        if (cell) {
+                            cell.classList.add('attack-range');
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error getting attack range:', error);
+            }
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.grid-cell').forEach(cell => {
+                cell.classList.remove('movement-range', 'attack-range');
+            });
+            showingMovement = false;
+            showingAttack = false;
+        }
+
+        async function applyTerrainTemplate() {
+            const templateSelect = document.getElementById('terrainTemplate');
+            if (!templateSelect.value) {
+                showMessage('Please select a terrain template', 'warning');
+                return;
+            }
+
+            // For now, just recreate the spatial combat with the template
+            await closeSpatialCombat();
+            await createSpatialCombat();
+        }
+
+        async function refreshSpatialCombat() {
+            if (!currentCombatId || !spatialCombatData) return;
+
+            try {
+                const response = await fetch(`/api/spatial_combat/${currentCombatId}/grid`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    spatialCombatData = result.data;
+                    renderSpatialGrid();
+                    
+                    // Reselect combatant if it was selected
+                    if (selectedSpatialCombatant) {
+                        selectSpatialCombatant(selectedSpatialCombatant);
+                    }
+                }
+            } catch (error) {
+                console.error('Error refreshing spatial combat:', error);
+            }
         }
     </script>
 </body>

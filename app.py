@@ -14,6 +14,7 @@ import json
 from items import CLASS_EQUIPMENT, ALL_ITEMS, CharacterEquipment, EquipmentSlot, ItemRarity, ItemType
 from story import story_generator
 from enemies import STANDARD_ENEMIES, get_enemy_by_name, get_random_enemy_for_level
+from spatial_combat_integration import SpatialCombatManager, setup_spatial_combat_routes, TERRAIN_TEMPLATES
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -1706,19 +1707,34 @@ def list_combats():
         
         combat_list = []
         for combat in combats:
+            # Check if spatial combat exists
+            has_spatial = spatial_combat_manager.get_spatial_combat(combat.id) is not None
+            
             combat_list.append({
                 'id': combat.id,
                 'name': combat.name,
                 'round': combat.current_round,
                 'is_active': combat.is_active,
                 'combatant_count': len(combat.combatants),
-                'created_at': combat.created_at.isoformat() if combat.created_at else None
+                'created_at': combat.created_at.isoformat() if combat.created_at else None,
+                'has_spatial': has_spatial
             })
         
         return jsonify({'combats': combat_list})
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/spatial_combat/templates')
+def get_terrain_templates():
+    """Get available terrain templates."""
+    try:
+        return jsonify({
+            'success': True,
+            'templates': TERRAIN_TEMPLATES
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/combat')
 def combat_page():
@@ -1759,6 +1775,12 @@ def upgrade_db():
             print("Database tables created/updated successfully")
         except Exception as e:
             print(f"Database setup: {e}")
+
+# Initialize spatial combat manager
+spatial_combat_manager = SpatialCombatManager(app)
+
+# Setup spatial combat routes
+setup_spatial_combat_routes(app, spatial_combat_manager)
 
 if __name__ == '__main__':
     upgrade_db()  # Set up database
