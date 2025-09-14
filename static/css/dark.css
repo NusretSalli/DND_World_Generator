@@ -1,0 +1,428 @@
+/* Global dark theme overrides for all pages */
+:root {
+    --bg: #0f141a;
+    --bg-elev-1: #121821;
+    --bg-elev-2: #17202a;
+    --text: #e6edf3;
+    --text-dim: #b6c2cf;
+    --border: #2d3742;
+    --accent: #8ab4f8;
+    --accent-2: #67d4a7;
+    --danger: #ff6b6b;
+    --warning: #f4c152;
+    --muted: #1b2430;
+}
+
+html,
+body {
+    background: var(--bg) !important;
+    color: var(--text) !important;
+}
+
+/* Force common light backgrounds to dark across elements */
+* {
+    /* Neutralize inline or embedded whites */
+    background-color: transparent;
+}
+
+/* Generic light-background utility overrides */
+.feature, .demo-section, .enemy-card, .action-demo, .character-header, .inventory, .inventory .item-card,
+.equipment-panel, .inventory-panel, .item-option, .container, .header, .combat-section {
+    background: var(--bg-elev-1) !important;
+}
+
+/* Specific common light colors we need to override on blocks */
+.container, .combat-section, .header, .character-card, .item-card, .item-option, .inventory,
+.equipment-panel, .inventory-panel, .form-section, .story-output, .demo-section, .feature,
+.enemy-card, .action-demo, .spatial-section, .help-overlay .help-box, .combatant-card,
+.navigation, .stats, .stats-summary, .character-header, .initiative-order, .initiative-list {
+    background-color: var(--bg-elev-1) !important;
+}
+
+/* Dialogs and overlays (inline styles set to white) */
+.dialog, #activeDialog {
+    background: var(--bg-elev-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+
+.dialog h3 { color: var(--text) !important; }
+.dialog select, .dialog input { background: var(--muted) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+
+/* Buttons default no white backgrounds */
+button, .btn { background-color: #334155; }
+
+/* Links */
+a {
+    color: var(--accent) !important;
+}
+
+a:hover {
+    color: #a7c3ff !important;
+}
+
+/* Containers and panels */
+.container,
+.combat-section,
+.character-card,
+.item-option,
+.item-card,
+.inventory,
+.equipment-panel,
+.inventory-panel,
+.form-section,
+.story-output,
+.stats,
+.stats-summary,
+.character-header,
+.spatial-section {
+    background: var(--bg-elev-1) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+
+/* Section headings dividers */
+.combat-section h2,
+.equipment-panel h2,
+.inventory-panel h2,
+.form-section h3 {
+    border-bottom-color: var(--border) !important;
+}
+
+/* Headers and nav */
+.header {
+    background: linear-gradient(135deg, #2b3a55 0%, #3a2b55 100%) !important;
+}
+
+.navigation,
+.nav-btn {
+    background: transparent !important;
+}
+
+.nav-btn {
+    background: #223042 !important;
+    color: var(--text) !important;
+}
+
+.nav-btn:hover {
+    background: #2b3d52 !important;
+}
+
+/* Buttons */
+.btn,
+button {
+    color: #fff !important;
+}
+
+.btn-primary,
+button[type="submit"],
+.btn-primary:visited {
+    background: #3b82f6 !important;
+    /* tailwind blue-500 */
+}
+
+.btn-primary:hover {
+    background: #2563eb !important;
+    /* blue-600 */
+}
+
+.btn-danger {
+    background: #ef4444 !important;
+    /* red-500 */
+}
+
+.btn-danger:hover {
+    background: #dc2626 !important;
+    /* red-600 */
+}
+
+.btn-success {
+    background: #22c55e !important;
+    /* green-500 */
+}
+
+.btn-success:hover {
+    background: #16a34a !important;
+    /* green-600 */
+}
+
+.btn-warning {
+    background: #f59e0b !important;
+    /* amber-500 */
+    color: #0f141a !important;
+}
+
+.btn-warning:hover {
+    background: #d97706 !important;
+    /* amber-600 */
+}
+
+.btn,
+.nav-btn,
+.item-option,
+.character-card,
+.item-card,
+.combat-section,
+.container,
+.equipment-panel,
+.inventory-panel,
+.form-section,
+.story-output,
+.inventory,
+.spatial-section {
+    border: 1px solid var(--border) !important;
+}
+
+/* Cards and hover */
+.character-card:hover,
+.item-option:hover,
+.item-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
+}
+
+.character-card.selected {
+    background: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+/* High-contrast HUD cards */
+.hud-card {
+    background: var(--bg-elev-2) !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* Text specifics */
+h1,
+h2,
+h3,
+h4,
+.hud-title {
+    color: var(--text) !important;
+}
+
+.character-stats,
+.item-details,
+.item-description,
+label,
+.suggestions-title,
+.story-text,
+.story-output,
+.combat-log,
+.spatial-legend {
+    color: var(--text-dim) !important;
+}
+
+/* Make main story text high-contrast */
+.story-text {
+    color: var(--text) !important;
+}
+
+/* Inputs */
+input,
+select,
+textarea,
+.form-control {
+    background: var(--muted) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #90a4ae !important;
+}
+
+/* Special component tweaks */
+.combat-log {
+    background: #0b1116 !important;
+    border-color: var(--border) !important;
+}
+
+.log-hit {
+    color: var(--accent-2) !important;
+}
+
+.log-miss {
+    color: var(--danger) !important;
+}
+
+.log-critical {
+    color: var(--warning) !important;
+}
+
+.hp-bar {
+    background: #1f2937 !important;
+}
+
+.hp-fill {
+    background: #10b981 !important;
+}
+
+.hp-fill.low {
+    background: #f59e0b !important;
+}
+
+.hp-fill.critical {
+    background: #ef4444 !important;
+}
+
+.condition-tag {
+    background: #ef4444 !important;
+}
+
+/* Spatial UI */
+.spatial-section {
+    border-color: var(--border) !important;
+}
+
+.spatial-legend {
+    color: var(--text-dim) !important;
+}
+
+.help-overlay .help-box {
+    background: #111827 !important;
+    color: var(--text) !important;
+}
+
+/* Inventory/Equipment extras */
+.equipment-slot {
+    background: #10161d !important;
+    border-color: var(--border) !important;
+}
+
+.equipment-slot.filled {
+    background: #102116 !important;
+    border-color: #22c55e !important;
+}
+
+.equipment-slot.magical {
+    background: #1a1230 !important;
+    border-color: #7c3aed !important;
+}
+
+.item-card.magical {
+    border-left-color: #7c3aed !important;
+}
+
+.item-card.rare {
+    border-left-color: #3b82f6 !important;
+}
+
+.item-card.uncommon {
+    border-left-color: #22c55e !important;
+}
+
+.item-card.legendary {
+    border-left-color: #f97316 !important;
+}
+
+/* Story page */
+.story-output {
+    background: #0b1116 !important;
+}
+
+/* Small neutral tags */
+.effect-tag {
+    background: #243243 !important;
+    color: var(--text-dim) !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* Messages */
+#messages .error {
+    background: #3b1d1d !important;
+    color: #ffc9c9 !important;
+}
+
+#messages .success {
+    background: #1d3b26 !important;
+    color: #c9ffdd !important;
+}
+
+/* Characters page extras */
+.stat {
+    background: #0f1520 !important;
+    border: 1px solid var(--border) !important;
+}
+
+.health-info {
+    background: #0f1b14 !important;
+    color: var(--text) !important;
+}
+
+.currency {
+    background: #1a140a !important;
+    color: var(--text) !important;
+}
+
+.inventory li {
+    border-bottom: 1px solid var(--border) !important;
+}
+
+.new-character-btn {
+    background: #223042 !important;
+    color: var(--text) !important;
+}
+
+.new-character-btn:hover {
+    background: #2b3d52 !important;
+}
+
+.delete-btn {
+    background: #ef4444 !important;
+    color: #fff !important;
+}
+
+.delete-btn:hover {
+    background: #dc2626 !important;
+}
+
+.action-btn {
+    background: #17a2b8 !important;
+    color: #0b1116 !important;
+}
+
+.action-btn:hover {
+    background: #148aa0 !important;
+}
+
+/* Rarity badges used across pages */
+.rarity-badge {
+    color: #fff !important;
+}
+
+.rarity-common {
+    background: #6c757d !important;
+}
+
+.rarity-uncommon {
+    background: #22c55e !important;
+}
+
+.rarity-rare {
+    background: #3b82f6 !important;
+}
+
+.rarity-very_rare {
+    background: #6f42c1 !important;
+}
+
+.rarity-legendary {
+    background: #f97316 !important;
+}
+
+/* Combatant card state colors for dark */
+.combatant-card.current-turn {
+    background: #2a1f00 !important;
+    border-color: #f59e0b !important;
+}
+
+.combatant-card.unconscious {
+    background: #2b1a1a !important;
+    border-color: #ef4444 !important;
+}
+
+.combatant-card.dead {
+    background: #0f141a !important;
+    opacity: 0.8 !important;
+}

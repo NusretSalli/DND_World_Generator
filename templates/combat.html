@@ -380,6 +380,7 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark.css') }}">
 </head>
 
 <body>
@@ -462,6 +463,18 @@
                         <div class="hud-title">Last Attack</div>
                         <div id="hudAttack">—</div>
                     </div>
+                </div>
+
+                <!-- Dedicated Action Bar -->
+                <div id="actionBar" class="action-bar"
+                    style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="btnAttack" class="btn btn-success" onclick="clickAttack()">Attack</button>
+                    <button id="btnThrow" class="btn" onclick="clickThrow()">Throw</button>
+                    <button id="btnHeal" class="btn btn-warning" onclick="clickHeal()">Heal</button>
+                    <button id="btnBonus" class="btn" style="background: #17a2b8; color: white;"
+                        onclick="clickBonus()">Bonus</button>
+                    <button id="btnReaction" class="btn" style="background: #6c757d; color: white;"
+                        onclick="clickReaction()">Reaction</button>
                 </div>
             </div>
 
@@ -801,6 +814,9 @@
 
                 combatantsList.appendChild(card);
             });
+
+            // Update action bar state based on latest data
+            updateActionBar();
         }
 
         async function makeAttack(attackerId, targetId) {
@@ -907,6 +923,7 @@
                 spatial.roster = data.combatants;
                 spatial.currentId = data.current_combatant_id;
                 drawSpatial();
+                updateActionBar();
             } catch (e) {
                 showMessage('Error refreshing spatial: ' + e.message, 'error');
             }
@@ -981,6 +998,9 @@
                 ctx.fillStyle = pct < 0.25 ? '#e74c3c' : pct < 0.5 ? '#f39c12' : '#27ae60';
                 ctx.fillRect(hpX, hpY, hpw * pct, hph);
             }
+
+            // Keep the action bar up to date after each draw (selection or roster may change)
+            updateActionBar();
         }
 
         function isOccupied(x, y) {
@@ -1028,6 +1048,103 @@
             }
         });
 
+        function getCurrentRosterEntry(id) {
+            return spatial.roster.find(u => u.id === id);
+        }
+
+        function getCurrentCombatant() {
+            return combatants.find(c => c.id === (spatial.currentId || 0));
+        }
+
+        function updateActionBar() {
+            const btnAttack = document.getElementById('btnAttack');
+            const btnThrow = document.getElementById('btnThrow');
+            const btnHeal = document.getElementById('btnHeal');
+            const btnBonus = document.getElementById('btnBonus');
+            const btnReaction = document.getElementById('btnReaction');
+
+            if (!btnAttack || !btnThrow || !btnHeal || !btnBonus || !btnReaction) return; // not yet in DOM
+
+            const isCurrentSelected = spatial.selectedId && spatial.selectedId === spatial.currentId;
+            const current = getCurrentCombatant();
+            const hasAction = !!(current && current.has_action);
+            const hasBonus = !!(current && current.has_bonus_action);
+            const hasReaction = !!(current && current.has_reaction);
+
+            // Attack: enabled if current selected and has action
+            btnAttack.disabled = !(isCurrentSelected && hasAction);
+            // Throw: also consumes action
+            btnThrow.disabled = !(isCurrentSelected && hasAction);
+            // Heal: consumes action for now (could be a spell etc.)
+            btnHeal.disabled = !(isCurrentSelected && hasAction);
+            // Bonus and Reaction as per flags
+            btnBonus.disabled = !(isCurrentSelected && hasBonus);
+            btnReaction.disabled = !(isCurrentSelected && hasReaction);
+        }
+
+        function clickAttack() {
+            // Prefer spatial adjacency-based attack dialog
+            if (!(spatial.selectedId && spatial.selectedId === spatial.currentId)) return;
+            showSpatialAttackDialog(spatial.selectedId);
+        }
+
+        function clickThrow() {
+            if (!(spatial.selectedId && spatial.selectedId === spatial.currentId)) return;
+            showThrowDialog(spatial.selectedId);
+        }
+
+        function clickHeal() {
+            if (!(spatial.selectedId && spatial.selectedId === spatial.currentId)) return;
+            // For simplicity, open heal dialog targeting anyone; default target self
+            showHealDialog(spatial.selectedId);
+        }
+
+        function clickBonus() {
+            if (!(spatial.selectedId && spatial.selectedId === spatial.currentId)) return;
+            showBonusActionDialog(spatial.selectedId);
+        }
+
+        function clickReaction() {
+            if (!(spatial.selectedId && spatial.selectedId === spatial.currentId)) return;
+            showReactionDialog(spatial.selectedId);
+        }
+
+        function showSpatialAttackDialog(attackerId) {
+            // Adjacent targets only
+            const attacker = getCurrentRosterEntry(attackerId);
+            if (!attacker) return;
+            const adjacent = spatial.roster.filter(u => u.id !== attackerId && (Math.abs(u.x - attacker.x) + Math.abs(u.y - attacker.y)) <= 1);
+            if (adjacent.length === 0) {
+                showMessage('No adjacent targets in range.', 'error');
+                return;
+            }
+            const options = adjacent.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+
+            const dialog = document.createElement('div');
+            dialog.className = 'dialog';
+            dialog.style.cssText = `position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 1000;`;
+            dialog.innerHTML = `
+                <h3>Choose Adjacent Target</h3>
+                <select id="spatialAttackTarget">${options}</select>
+                <br><br>
+                <button class="btn btn-success" onclick="confirmSpatialAttack(${attackerId})">Attack</button>
+                <button class="btn btn-danger" onclick="closeDialog()">Cancel</button>
+            `;
+            document.body.appendChild(dialog);
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999;`;
+            overlay.onclick = closeDialog;
+            document.body.appendChild(overlay);
+            dialog.overlay = overlay;
+            dialog.id = 'activeDialog';
+        }
+
+        async function confirmSpatialAttack(attackerId) {
+            const targetId = parseInt(document.getElementById('spatialAttackTarget').value);
+            closeDialog();
+            await doSpatialAttack(attackerId, targetId);
+        }
+
         async function doSpatialMove(combatantId, x, y) {
             try {
                 const res = await fetch(`/api/spatial/${currentCombatId}/move`, {
@@ -1041,6 +1158,7 @@
                 }
                 await refreshSpatial();
                 await loadCombatStatus();
+                updateActionBar();
             } catch (e) {
                 showMessage('Error moving: ' + e.message, 'error');
             }
@@ -1078,6 +1196,7 @@
                 };
                 await refreshSpatial();
                 await loadCombatStatus();
+                updateActionBar();
             } catch (e) {
                 showMessage('Error attacking: ' + e.message, 'error');
             }
@@ -1095,6 +1214,7 @@
                 drawSpatial();
             } else if (key === 'e') {
                 await endTurn();
+                updateActionBar();
             }
         });
 
@@ -1125,9 +1245,10 @@
             let targetOptions = targets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
 
             const dialog = document.createElement('div');
+            dialog.className = 'dialog';
             dialog.style.cssText = `
                 position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 z-index: 1000;
             `;
 
@@ -1275,9 +1396,10 @@
             let targetOptions = targets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
 
             const dialog = document.createElement('div');
+            dialog.className = 'dialog';
             dialog.style.cssText = `
                 position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 z-index: 1000; width: 350px;
             `;
 
@@ -1404,9 +1526,10 @@
             ).join('');
 
             const dialog = document.createElement('div');
+            dialog.className = 'dialog';
             dialog.style.cssText = `
                 position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 z-index: 1000; width: 400px;
             `;
 
@@ -1558,9 +1681,10 @@
             let targetOptions = validTargets.map(t => `<option value="${t.id}">${t.character_name}</option>`).join('');
 
             const dialog = document.createElement('div');
+            dialog.className = 'dialog';
             dialog.style.cssText = `
                 position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
                 z-index: 1000; width: 400px;
             `;
 

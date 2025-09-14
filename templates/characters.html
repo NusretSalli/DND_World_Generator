@@ -212,12 +212,32 @@
             margin-left: 5px;
         }
 
-        .rarity-common { background: #6c757d; color: white; }
-        .rarity-uncommon { background: #28a745; color: white; }
-        .rarity-rare { background: #007bff; color: white; }
-        .rarity-very_rare { background: #6f42c1; color: white; }
-        .rarity-legendary { background: #fd7e14; color: white; }
+        .rarity-common {
+            background: #6c757d;
+            color: white;
+        }
+
+        .rarity-uncommon {
+            background: #28a745;
+            color: white;
+        }
+
+        .rarity-rare {
+            background: #007bff;
+            color: white;
+        }
+
+        .rarity-very_rare {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .rarity-legendary {
+            background: #fd7e14;
+            color: white;
+        }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark.css') }}">
 </head>
 
 <body>
@@ -280,7 +300,8 @@
                 </div>
 
                 <div class="character-actions">
-                    <a href="{{ url_for('character_inventory', character_id=character.id) }}" class="action-btn">📦 Manage Inventory</a>
+                    <a href="{{ url_for('character_inventory', character_id=character.id) }}" class="action-btn">📦
+                        Manage Inventory</a>
                 </div>
 
                 {% if character.inventory %}

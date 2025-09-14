@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -54,14 +55,16 @@
             gap: 30px;
         }
 
-        .equipment-panel, .inventory-panel {
+        .equipment-panel,
+        .inventory-panel {
             background: #f8f9fa;
             padding: 20px;
             border-radius: 5px;
             border: 1px solid #dee2e6;
         }
 
-        .equipment-panel h2, .inventory-panel h2 {
+        .equipment-panel h2,
+        .inventory-panel h2 {
             margin-top: 0;
             color: #2c3e50;
             border-bottom: 2px solid #3498db;
@@ -144,11 +147,30 @@
             text-transform: uppercase;
         }
 
-        .rarity-common { background: #6c757d; color: white; }
-        .rarity-uncommon { background: #28a745; color: white; }
-        .rarity-rare { background: #007bff; color: white; }
-        .rarity-very_rare { background: #6f42c1; color: white; }
-        .rarity-legendary { background: #fd7e14; color: white; }
+        .rarity-common {
+            background: #6c757d;
+            color: white;
+        }
+
+        .rarity-uncommon {
+            background: #28a745;
+            color: white;
+        }
+
+        .rarity-rare {
+            background: #007bff;
+            color: white;
+        }
+
+        .rarity-very_rare {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .rarity-legendary {
+            background: #fd7e14;
+            color: white;
+        }
 
         .item-effects {
             margin-top: 5px;
@@ -236,7 +258,9 @@
             border-radius: 3px;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark.css') }}">
 </head>
+
 <body>
     <div class="container">
         <nav class="navigation">
@@ -272,30 +296,32 @@
                 <h2>Equipped Items</h2>
                 <div class="equipment-slots">
                     {% for slot in available_slots %}
-                    <div class="equipment-slot {% if equipment_slots[slot.value] %}filled{% endif %} {% if equipment_slots[slot.value] and equipment_slots[slot.value].magical %}magical{% endif %}">
+                    <div
+                        class="equipment-slot {% if equipment_slots[slot.value] %}filled{% endif %} {% if equipment_slots[slot.value] and equipment_slots[slot.value].magical %}magical{% endif %}">
                         <div class="slot-label">{{ slot.value.replace('_', ' ').title() }}</div>
-                        
+
                         {% if equipment_slots[slot.value] %}
-                            {% set item = equipment_slots[slot.value] %}
-                            <div class="item-name">{{ item.name }}</div>
-                            {% if item.rarity != 'common' %}
-                                <span class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity }}</span>
-                            {% endif %}
-                            {% if item.magical %}
-                                <span class="effect-tag">✨ Magical</span>
-                            {% endif %}
-                            {% if item.requires_attunement %}
-                                <span class="effect-tag">🔗 Attuned</span>
-                            {% endif %}
-                            
-                            <div class="slot-actions">
-                                <form method="POST" action="{{ url_for('unequip_item', character_id=character.id) }}" style="display: inline;">
-                                    <input type="hidden" name="slot" value="{{ slot.value }}">
-                                    <button type="submit" class="btn btn-danger">Unequip</button>
-                                </form>
-                            </div>
+                        {% set item = equipment_slots[slot.value] %}
+                        <div class="item-name">{{ item.name }}</div>
+                        {% if item.rarity != 'common' %}
+                        <span class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity }}</span>
+                        {% endif %}
+                        {% if item.magical %}
+                        <span class="effect-tag">✨ Magical</span>
+                        {% endif %}
+                        {% if item.requires_attunement %}
+                        <span class="effect-tag">🔗 Attuned</span>
+                        {% endif %}
+
+                        <div class="slot-actions">
+                            <form method="POST" action="{{ url_for('unequip_item', character_id=character.id) }}"
+                                style="display: inline;">
+                                <input type="hidden" name="slot" value="{{ slot.value }}">
+                                <button type="submit" class="btn btn-danger">Unequip</button>
+                            </form>
+                        </div>
                         {% else %}
-                            <div style="color: #6c757d; font-style: italic;">Empty</div>
+                        <div style="color: #6c757d; font-style: italic;">Empty</div>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -304,11 +330,13 @@
 
             <div class="inventory-panel">
                 <h2>Carried Items</h2>
-                
+
                 {% for item in carried_items %}
                 <div class="item-card {% if item.magical %}magical{% endif %} {{ item.rarity }}">
                     <div class="action-buttons">
-                        <form method="POST" action="{{ url_for('equip_item', character_id=character.id, item_id=item.id) }}" style="display: inline;">
+                        <form method="POST"
+                            action="{{ url_for('equip_item', character_id=character.id, item_id=item.id) }}"
+                            style="display: inline;">
                             <select name="slot" class="select-slot" required>
                                 <option value="">Select Slot</option>
                                 {% for slot in available_slots %}
@@ -317,56 +345,58 @@
                             </select>
                             <button type="submit" class="btn btn-success">Equip</button>
                         </form>
-                        <form method="POST" action="{{ url_for('delete_character', character_id=character.id) }}" style="display: inline;">
+                        <form method="POST" action="{{ url_for('delete_character', character_id=character.id) }}"
+                            style="display: inline;">
                             <button type="submit" class="btn btn-danger">Remove</button>
                         </form>
                     </div>
-                    
+
                     <div class="item-name">{{ item.name }}</div>
-                    
+
                     <div class="item-details">
                         {% if item.rarity != 'common' %}
-                            <span class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity }}</span>
+                        <span class="item-rarity rarity-{{ item.rarity }}">{{ item.rarity }}</span>
                         {% endif %}
                         {% if item.magical %}
-                            <span class="effect-tag">✨ Magical</span>
+                        <span class="effect-tag">✨ Magical</span>
                         {% endif %}
                         {% if item.requires_attunement %}
-                            <span class="effect-tag">🔗 Requires Attunement</span>
+                        <span class="effect-tag">🔗 Requires Attunement</span>
                         {% endif %}
                         {% if item.enchantment_bonus > 0 %}
-                            <span class="effect-tag">+{{ item.enchantment_bonus }}</span>
+                        <span class="effect-tag">+{{ item.enchantment_bonus }}</span>
                         {% endif %}
-                        
+
                         <br>
                         <strong>Type:</strong> {{ item.item_type.replace('_', ' ').title() }}
                         {% if item.weight %} | <strong>Weight:</strong> {{ item.weight }} lbs{% endif %}
                         {% if item.value %} | <strong>Value:</strong> {{ item.value }} gp{% endif %}
-                        
+
                         {% if item.damage %}
-                            <br><strong>Damage:</strong> {{ item.damage }} {{ item.damage_type }}
+                        <br><strong>Damage:</strong> {{ item.damage }} {{ item.damage_type }}
                         {% endif %}
-                        
+
                         {% if item.base_ac %}
-                            <br><strong>AC:</strong> {{ item.base_ac }}{% if item.enchantment_bonus > 0 %} (+{{ item.enchantment_bonus }}){% endif %}
+                        <br><strong>AC:</strong> {{ item.base_ac }}{% if item.enchantment_bonus > 0 %} (+{{
+                        item.enchantment_bonus }}){% endif %}
                         {% endif %}
-                        
+
                         {% if item.description %}
-                            <br><em>{{ item.description }}</em>
+                        <br><em>{{ item.description }}</em>
                         {% endif %}
                     </div>
-                    
+
                     {% if item.get_effects_list() %}
                     <div class="item-effects">
                         <strong>Effects:</strong>
                         {% for effect in item.get_effects_list() %}
-                            <span class="effect-tag">{{ effect.type }}: {{ effect.value }}</span>
+                        <span class="effect-tag">{{ effect.type }}: {{ effect.value }}</span>
                         {% endfor %}
                     </div>
                     {% endif %}
                 </div>
                 {% endfor %}
-                
+
                 {% if not carried_items %}
                 <p style="color: #6c757d; font-style: italic;">No carried items</p>
                 {% endif %}
@@ -374,4 +404,5 @@
         </div>
     </div>
 </body>
+
 </html>
