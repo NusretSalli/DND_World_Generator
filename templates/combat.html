@@ -311,6 +311,23 @@
         .hidden {
             display: none;
         }
+
+        /* Spatial Grid Styles */
+        .spatial-section {
+            margin-top: 20px;
+        }
+
+        #spatialCanvas {
+            border: 2px solid #333;
+            background: #fff;
+            border-radius: 6px;
+        }
+
+        .spatial-legend {
+            font-size: 0.9em;
+            color: #555;
+            margin-top: 6px;
+        }
     </style>
 </head>
 
@@ -360,6 +377,15 @@
                 <!-- Combatants will be displayed here -->
             </div>
 
+            <!-- Spatial Combat Section -->
+            <div id="spatialSection" class="spatial-section">
+                <h3>Spatial Combat</h3>
+                <canvas id="spatialCanvas" width="800" height="600"></canvas>
+                <div class="spatial-legend">
+                    Click current unit to select. Click a tile within 6 to move. Click adjacent enemy to attack.
+                </div>
+            </div>
+
             <div id="combatActions" style="margin-top: 20px;">
                 <button id="endTurnBtn" class="btn btn-primary" onclick="endTurn()">End Turn</button>
                 <button id="endCombatBtn" class="btn btn-danger" onclick="endCombat()">End Combat</button>
@@ -381,6 +407,9 @@
         let selectedCharacters = new Set();
         let selectedEnemies = new Set(); // store enemy names
         let combatants = [];
+        // Spatial state
+        const TILE = 40; // px per tile
+        let spatial = { grid: { cols: 20, rows: 15 }, positions: {}, currentId: null, roster: [], selectedId: null };
 
         // Load characters on page load
         document.addEventListener('DOMContentLoaded', function () {
@@ -543,6 +572,7 @@
 
                     // Load initial combat state
                     await loadCombatStatus();
+                    await refreshSpatial();
                 } else {
                     showMessage('Error starting combat: ' + result.error, 'error');
                 }
@@ -661,16 +691,8 @@
                             </span>
                         </div>
                         
-                        <div style="margin-bottom: 5px;"><strong>Actions:</strong></div>
-                        <button class="btn btn-success" onclick="showAttackDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''}>Attack</button>
-                        <button class="btn btn-primary" onclick="showHealDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''} title="Only spellcasters can heal">Heal</button>
-                        <button class="btn btn-secondary" onclick="showThrowDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_action ? 'disabled' : ''}>Throw Item</button>
-                        
-                        <div style="margin: 10px 0 5px 0;"><strong>Bonus Actions:</strong></div>
-                        <button class="btn btn-warning" onclick="showBonusActionDialog(${combatant.id})" ${combatant.id !== combatData.current_combatant_id || !combatant.has_bonus_action ? 'disabled' : ''}>Bonus Action</button>
-                        
-                        <div style="margin: 10px 0 5px 0;"><strong>Reactions:</strong></div>
-                        <button class="btn" style="background: #17a2b8; color: white;" onclick="showReactionDialog(${combatant.id})" ${!combatant.has_reaction ? 'disabled' : ''}>Reaction</button>
+                        <!-- Legacy non-spatial controls hidden to favor spatial UI -->
+                        <div style="margin-bottom: 5px;"><strong>Actions:</strong> Use the grid below to move and attack.</div>
                     </div>
                 `;
 
@@ -755,11 +777,173 @@
                 if (response.ok) {
                     addToCombatLog('Turn ended.', '');
                     await loadCombatStatus();
+                    await refreshSpatial();
                 } else {
                     showMessage('Error ending turn: ' + result.error, 'error');
                 }
             } catch (error) {
                 showMessage('Error ending turn: ' + error.message, 'error');
+            }
+        }
+
+        // --- Spatial rendering and interactions ---
+        const canvas = document.getElementById('spatialCanvas');
+        const ctx = canvas.getContext('2d');
+
+        async function refreshSpatial() {
+            if (!currentCombatId) return;
+            try {
+                const res = await fetch(`/api/spatial/${currentCombatId}/state`);
+                const data = await res.json();
+                if (!res.ok) {
+                    showMessage(data.error || 'Failed to load spatial state', 'error');
+                    return;
+                }
+                spatial.grid = data.grid;
+                spatial.positions = data.positions;
+                spatial.roster = data.combatants;
+                spatial.currentId = data.current_combatant_id;
+                drawSpatial();
+            } catch (e) {
+                showMessage('Error refreshing spatial: ' + e.message, 'error');
+            }
+        }
+
+        function drawSpatial() {
+            // Resize canvas to grid
+            canvas.width = spatial.grid.cols * TILE;
+            canvas.height = spatial.grid.rows * TILE;
+
+            // Clear
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Grid
+            ctx.strokeStyle = '#ddd';
+            for (let x = 0; x <= spatial.grid.cols; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * TILE, 0);
+                ctx.lineTo(x * TILE, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= spatial.grid.rows; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * TILE);
+                ctx.lineTo(canvas.width, y * TILE);
+                ctx.stroke();
+            }
+
+            // Draw tokens
+            for (const unit of spatial.roster) {
+                const x = unit.x * TILE + TILE / 2;
+                const y = unit.y * TILE + TILE / 2;
+                const r = TILE * 0.4;
+                // Color: current turn blue, monsters red, players green
+                const isMonster = unit.name.toLowerCase().includes('#'); // heuristic from enemy naming
+                let color = isMonster ? '#e74c3c' : '#27ae60';
+                if (unit.id === spatial.currentId) color = '#3498db';
+                if (unit.id === spatial.selectedId) color = '#f39c12';
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Name and HP bar
+                ctx.fillStyle = '#333';
+                ctx.font = '12px Segoe UI';
+                ctx.textAlign = 'center';
+                ctx.fillText(unit.name, x, y - r - 6);
+                // HP bar
+                const hpw = TILE * 0.8;
+                const hph = 6;
+                const hpX = x - hpw / 2;
+                const hpY = y + r + 6;
+                ctx.fillStyle = '#eee';
+                ctx.fillRect(hpX, hpY, hpw, hph);
+                const pct = Math.max(0, unit.hp) / Math.max(1, unit.max_hp);
+                ctx.fillStyle = pct < 0.25 ? '#e74c3c' : pct < 0.5 ? '#f39c12' : '#27ae60';
+                ctx.fillRect(hpX, hpY, hpw * pct, hph);
+            }
+        }
+
+        canvas.addEventListener('click', async (evt) => {
+            if (!currentCombatId) return;
+            const rect = canvas.getBoundingClientRect();
+            const gx = Math.floor((evt.clientX - rect.left) / TILE);
+            const gy = Math.floor((evt.clientY - rect.top) / TILE);
+
+            // If clicking on a unit
+            const clickedUnit = spatial.roster.find(u => u.x === gx && u.y === gy);
+            if (clickedUnit) {
+                // If current has a selection and clicked is adjacent enemy -> attack
+                if (spatial.selectedId && clickedUnit.id !== spatial.selectedId) {
+                    const sel = spatial.roster.find(u => u.id === spatial.selectedId);
+                    const dist = Math.abs(sel.x - clickedUnit.x) + Math.abs(sel.y - clickedUnit.y);
+                    if (dist <= 1) {
+                        await doSpatialAttack(spatial.selectedId, clickedUnit.id);
+                        return;
+                    }
+                }
+                // Select if it's the current unit
+                if (clickedUnit.id === spatial.currentId) {
+                    spatial.selectedId = clickedUnit.id;
+                    drawSpatial();
+                } else {
+                    // Select different unit just to inspect
+                    spatial.selectedId = clickedUnit.id;
+                    drawSpatial();
+                }
+                return;
+            }
+
+            // Otherwise, try to move selected current unit
+            if (spatial.selectedId && spatial.selectedId === spatial.currentId) {
+                await doSpatialMove(spatial.selectedId, gx, gy);
+            }
+        });
+
+        async function doSpatialMove(combatantId, x, y) {
+            try {
+                const res = await fetch(`/api/spatial/${currentCombatId}/move`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ combatant_id: combatantId, x, y })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showMessage(data.error || 'Move failed', 'error');
+                    return;
+                }
+                await refreshSpatial();
+                await loadCombatStatus();
+            } catch (e) {
+                showMessage('Error moving: ' + e.message, 'error');
+            }
+        }
+
+        async function doSpatialAttack(attackerId, targetId) {
+            try {
+                const res = await fetch(`/api/spatial/${currentCombatId}/attack`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ attacker_id: attackerId, target_id: targetId })
+                });
+                const result = await res.json();
+                if (!res.ok) {
+                    showMessage(result.error || 'Attack failed', 'error');
+                    return;
+                }
+                const attacker = combatants.find(c => c.id === attackerId);
+                const target = combatants.find(c => c.id === targetId);
+                let logMessage = `${attacker.character_name} attacks ${target.character_name}: `;
+                if (result.hit) {
+                    logMessage += `HIT! (${result.attack_roll}) for ${result.damage} ${result.damage_type} damage`;
+                    if (result.critical) logMessage = `CRITICAL HIT! ` + logMessage;
+                    addToCombatLog(logMessage, result.critical ? 'log-critical' : 'log-hit');
+                } else {
+                    logMessage += `MISS (${result.attack_roll})`;
+                    addToCombatLog(logMessage, 'log-miss');
+                }
+                await refreshSpatial();
+                await loadCombatStatus();
+            } catch (e) {
+                showMessage('Error attacking: ' + e.message, 'error');
             }
         }
 

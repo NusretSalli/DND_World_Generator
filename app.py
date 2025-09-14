@@ -1,4 +1,6 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from pynames import GENDER, LANGUAGE
@@ -24,6 +26,66 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
+# ---- Spatial combat (in-memory grid state) ----
+# Grid dimensions (tiles)
+GRID_COLS = 20
+GRID_ROWS = 15
+
+# In-memory spatial state per combat_id
+# { combat_id: { 'positions': {combatant_id: {'x': int,'y': int}}, 'initialized': bool } }
+spatial_states = {}
+
+def _manhattan(a, b):
+    return abs(a['x'] - b['x']) + abs(a['y'] - b['y'])
+
+def _init_spatial_positions(combat_id: int):
+    """Place combatants on a grid: players on left, monsters on right."""
+    combat = Combat.query.get(combat_id)
+    if not combat:
+        return
+    positions = {}
+    left_col = 1
+    right_col = GRID_COLS - 2
+    y_left = 1
+    y_right = 1
+    for c in sorted(combat.combatants, key=lambda x: x.initiative, reverse=True):
+        is_monster = (c.character.character_class or '').lower() == 'monster'
+        if is_monster:
+            positions[c.id] = {'x': right_col, 'y': y_right}
+            y_right = y_right + 2 if y_right + 2 < GRID_ROWS - 1 else 1
+        else:
+            positions[c.id] = {'x': left_col, 'y': y_left}
+            y_left = y_left + 2 if y_left + 2 < GRID_ROWS - 1 else 1
+    spatial_states[combat_id] = {'positions': positions, 'initialized': True}
+
+def _get_spatial_state(combat_id: int):
+    state = spatial_states.get(combat_id)
+    if state is None or not state.get('initialized'):
+        _init_spatial_positions(combat_id)
+        state = spatial_states.get(combat_id)
+    return state
+
+def _is_occupied(positions: dict, x: int, y: int, ignore_id: int = None) -> bool:
+    for cid, pos in positions.items():
+        if ignore_id is not None and cid == ignore_id:
+            continue
+        if pos['x'] == x and pos['y'] == y:
+            return True
+    return False
+
+def _place_new_combatant(combat_id: int, combatant: "Combatant"):
+    state = _get_spatial_state(combat_id)
+    if not state:
+        return
+    positions = state['positions']
+    is_monster = (combatant.character.character_class or '').lower() == 'monster'
+    col = GRID_COLS - 2 if is_monster else 1
+    # Find first free row
+    for y in range(1, GRID_ROWS - 1):
+        if not _is_occupied(positions, col, y):
+            positions[combatant.id] = {'x': col, 'y': y}
+            break
+
 # Item Model - Represents all objects that can be owned by characters
 class Item(db.Model):
     """
@@ -40,7 +102,7 @@ class Item(db.Model):
     description = db.Column(db.Text)
     weight = db.Column(db.Float)
     value = db.Column(db.Integer)  # in gold pieces
-    character_id = db.Column(db.Integer, db.ForeignKey('character.id'))
+    character_id = db.Column(db.Integer, db.ForeignKey('character.id', ondelete='CASCADE'))
     
     # Enhanced D&D properties
     rarity = db.Column(db.String(20), default='common')  # common, uncommon, rare, very_rare, legendary, artifact
@@ -160,7 +222,12 @@ class Character(db.Model):
     platinum = db.Column(db.Integer, default=0)
     
     # Relationships - Link to items owned by this character
-    inventory = db.relationship('Item', backref='owner', lazy=True)
+    inventory = db.relationship(
+        'Item',
+        backref=db.backref('owner'),
+        lazy=True,
+        cascade='all, delete-orphan'
+    )
 
     def __repr__(self):
         """String representation of the character."""
@@ -411,8 +478,8 @@ class Combatant(db.Model):
     like initiative, conditions, and temporary HP.
     """
     id = db.Column(db.Integer, primary_key=True)
-    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id'), nullable=False)
-    character_id = db.Column(db.Integer, db.ForeignKey('character.id'), nullable=False)
+    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id', ondelete='CASCADE'), nullable=False)
+    character_id = db.Column(db.Integer, db.ForeignKey('character.id', ondelete='CASCADE'), nullable=False)
     
     # Combat state
     initiative = db.Column(db.Integer, nullable=False)
@@ -431,7 +498,11 @@ class Combatant(db.Model):
     has_reaction = db.Column(db.Boolean, default=True)
     
     # Relationships
-    character = db.relationship('Character', backref='combatant_instances', lazy=True)
+    character = db.relationship(
+        'Character',
+        backref=db.backref('combatant_instances', cascade='all, delete-orphan'),
+        lazy=True
+    )
     
     def __repr__(self):
         return f'<Combatant {self.character.name}>'
@@ -527,9 +598,9 @@ class CombatAction(db.Model):
     Records all actions for replay and analysis purposes.
     """
     id = db.Column(db.Integer, primary_key=True)
-    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id'), nullable=False)
-    actor_id = db.Column(db.Integer, db.ForeignKey('combatant.id'), nullable=False)
-    target_id = db.Column(db.Integer, db.ForeignKey('combatant.id'))  # Can be null for non-targeted actions
+    combat_id = db.Column(db.Integer, db.ForeignKey('combat.id', ondelete='CASCADE'), nullable=False)
+    actor_id = db.Column(db.Integer, db.ForeignKey('combatant.id', ondelete='CASCADE'), nullable=False)
+    target_id = db.Column(db.Integer, db.ForeignKey('combatant.id', ondelete='SET NULL'), nullable=True)  # Can be null for non-targeted actions
     
     action_type = db.Column(db.String(50), nullable=False)  # attack, dodge, dash, etc.
     round_number = db.Column(db.Integer, nullable=False)
@@ -541,8 +612,16 @@ class CombatAction(db.Model):
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
     
     # Relationships
-    actor = db.relationship('Combatant', foreign_keys=[actor_id], backref='actions_taken')
-    target = db.relationship('Combatant', foreign_keys=[target_id], backref='actions_received')
+    actor = db.relationship(
+        'Combatant',
+        foreign_keys=[actor_id],
+        backref=db.backref('actions_taken', passive_deletes=True)
+    )
+    target = db.relationship(
+        'Combatant',
+        foreign_keys=[target_id],
+        backref=db.backref('actions_received', passive_deletes=True)
+    )
 
 class Enemy(db.Model):
     """
@@ -1024,6 +1103,9 @@ def start_combat():
                 'conditions': combatant.conditions_list
             })
         
+        # Ensure spatial positions initialized for this combat
+        _init_spatial_positions(combat.id)
+
         return jsonify({
             'combat_id': combat.id,
             'name': combat.name,
@@ -1684,7 +1766,10 @@ def add_enemy_to_combat(combat_id):
         )
         db.session.add(combatant)
         db.session.commit()
-        
+
+        # Place on grid
+        _place_new_combatant(combat_id, combatant)
+
         return jsonify({
             'success': True,
             'combatant_id': combatant.id,
@@ -1725,6 +1810,142 @@ def combat_page():
     """Render the combat management page."""
     return render_template('combat.html')
 
+# --- Spatial API ---
+@app.route('/api/spatial/<int:combat_id>/state')
+def spatial_state(combat_id: int):
+    combat = Combat.query.get_or_404(combat_id)
+    state = _get_spatial_state(combat_id)
+    if not state:
+        return jsonify({'error': 'Spatial state unavailable'}), 500
+    positions = state['positions']
+    current = combat.current_combatant
+    # Build minimal roster info
+    roster = []
+    for c in combat.combatants:
+        pos = positions.get(c.id) or {'x': 0, 'y': 0}
+        roster.append({
+            'id': c.id,
+            'name': c.character.name,
+            'hp': c.current_hp,
+            'max_hp': c.character.max_hp,
+            'ac': c.character.armor_class,
+            'is_conscious': c.is_conscious,
+            'is_dead': c.is_dead,
+            'x': pos['x'],
+            'y': pos['y'],
+        })
+    return jsonify({
+        'grid': {'cols': GRID_COLS, 'rows': GRID_ROWS},
+        'positions': positions,
+        'combat_id': combat.id,
+        'name': combat.name,
+        'round': combat.current_round,
+        'current_combatant_id': current.id if current else None,
+        'combatants': roster,
+    })
+
+@app.route('/api/spatial/<int:combat_id>/move', methods=['POST'])
+def spatial_move(combat_id: int):
+    try:
+        data = request.get_json() or {}
+        combatant_id = int(data.get('combatant_id'))
+        x = int(data.get('x'))
+        y = int(data.get('y'))
+
+        combat = Combat.query.get_or_404(combat_id)
+        c = Combatant.query.get_or_404(combatant_id)
+        if combat.current_combatant is None or combat.current_combatant.id != combatant_id:
+            return jsonify({'error': 'Not your turn'}), 400
+        if not c.has_movement:
+            return jsonify({'error': 'No movement left'}), 400
+
+        state = _get_spatial_state(combat_id)
+        if not state:
+            return jsonify({'error': 'Spatial state not initialized'}), 500
+        positions = state['positions']
+        start = positions.get(combatant_id)
+        if not start:
+            return jsonify({'error': 'No start position'}), 400
+        # Validate in bounds
+        if x < 0 or y < 0 or x >= GRID_COLS or y >= GRID_ROWS:
+            return jsonify({'error': 'Out of bounds'}), 400
+        # Max move 6 tiles (roughly 30 ft)
+        if _manhattan(start, {'x': x, 'y': y}) > 6:
+            return jsonify({'error': 'Destination too far (max 6)'}), 400
+        # Occupancy check
+        if _is_occupied(positions, x, y, ignore_id=combatant_id):
+            return jsonify({'error': 'Tile occupied'}), 400
+
+        positions[combatant_id] = {'x': x, 'y': y}
+        c.has_movement = False
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/spatial/<int:combat_id>/attack', methods=['POST'])
+def spatial_attack(combat_id: int):
+    try:
+        from combat import CombatEngine
+        data = request.get_json() or {}
+        attacker_id = int(data.get('attacker_id'))
+        target_id = int(data.get('target_id'))
+
+        combat = Combat.query.get_or_404(combat_id)
+        attacker = Combatant.query.get_or_404(attacker_id)
+        target = Combatant.query.get_or_404(target_id)
+
+        if combat.current_combatant is None or combat.current_combatant.id != attacker_id:
+            return jsonify({'error': "Not attacker's turn"}), 400
+        if not attacker.has_action:
+            return jsonify({'error': 'No action available'}), 400
+
+        state = _get_spatial_state(combat_id)
+        if not state:
+            return jsonify({'error': 'Spatial state not initialized'}), 500
+        positions = state['positions']
+        a_pos = positions.get(attacker_id)
+        t_pos = positions.get(target_id)
+        if not a_pos or not t_pos:
+            return jsonify({'error': 'Positions unknown'}), 400
+        # Require adjacency (radius 1 in manhattan distance)
+        if _manhattan(a_pos, t_pos) > 1:
+            return jsonify({'error': 'Target out of melee range'}), 400
+
+        # Use existing attack logic (no weapon specified -> basic)
+        attack_bonus = CombatEngine.calculate_weapon_attack_bonus(attacker.character, None)
+        target_ac = CombatEngine.calculate_ac(target.character)
+        hit, attack_roll, critical = CombatEngine.make_attack_roll(attack_bonus, target_ac)
+
+        damage_dealt = 0
+        damage_type = 'bludgeoning'
+        if hit:
+            dmg = CombatEngine.calculate_weapon_damage(attacker.character, None, critical)
+            total = CombatEngine.roll_dice(dmg.dice_count, dmg.dice_size, dmg.modifier)
+            if total > 0:
+                target.apply_damage(total)
+                damage_dealt = total
+            damage_type = dmg.damage_type
+
+        attacker.has_action = False
+        db.session.commit()
+
+        action = CombatAction(
+            combat_id=combat_id,
+            actor_id=attacker_id,
+            target_id=target_id,
+            action_type='attack',
+            round_number=combat.current_round,
+            action_data=json.dumps({'spatial': True, 'attack_roll': attack_roll, 'critical': critical}),
+            result=json.dumps({'hit': hit, 'damage': damage_dealt, 'damage_type': damage_type})
+        )
+        db.session.add(action)
+        db.session.commit()
+
+        return jsonify({'success': True, 'hit': hit, 'attack_roll': attack_roll, 'critical': critical, 'damage': damage_dealt, 'damage_type': damage_type})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/characters')
 def api_characters():
     """API endpoint to get character data as JSON."""
@@ -1749,6 +1970,16 @@ def api_characters():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+    # Ensure SQLite enforces foreign keys (needed for ON DELETE CASCADE)
+    @event.listens_for(Engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+        except Exception:
+            pass
 
 def upgrade_db():
     """Initialize and upgrade database."""
