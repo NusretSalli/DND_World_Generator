@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ character.name }} - Spells</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+        }
+
+        .character-header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .navigation {
+            margin-bottom: 20px;
+        }
+
+        .nav-btn {
+            background: #2c3e50;
+            color: white;
+            padding: 10px 15px;
+            text-decoration: none;
+            border-radius: 3px;
+            margin-right: 10px;
+            display: inline-block;
+        }
+
+        .nav-btn:hover {
+            background: #34495e;
+        }
+
+        .spell-slots {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .slot-level {
+            display: inline-block;
+            margin: 5px 10px;
+            padding: 8px 12px;
+            background: #007bff;
+            color: white;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+
+        .slot-level.empty {
+            background: #6c757d;
+        }
+
+        .spell-section {
+            margin-bottom: 30px;
+        }
+
+        .spell-section h3 {
+            background: #2c3e50;
+            color: white;
+            padding: 10px;
+            margin: 0 0 10px 0;
+            border-radius: 3px;
+        }
+
+        .spell-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
+        }
+
+        .spell-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            position: relative;
+        }
+
+        .spell-item.known {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+
+        .spell-item.prepared {
+            background: #cce5ff;
+            border-color: #99ccff;
+        }
+
+        .spell-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .spell-actions {
+            margin-top: 10px;
+        }
+
+        .cast-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .cast-btn:hover {
+            background: #218838;
+        }
+
+        .cast-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .rest-section {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .rest-btn {
+            background: #17a2b8;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .rest-btn:hover {
+            background: #138496;
+        }
+
+        .non-spellcaster {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            margin: 50px 0;
+        }
+
+        .spell-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="navigation">
+            <a href="/characters" class="nav-btn">← Back to Characters</a>
+            <a href="{{ url_for('character_inventory', character_id=character.id) }}" class="nav-btn">Inventory</a>
+            {% if character.is_spellcaster() %}
+            <a href="#" class="nav-btn" onclick="longRest()">Long Rest</a>
+            {% endif %}
+        </nav>
+
+        <div class="character-header">
+            <h1>{{ character.name }}'s Spells</h1>
+            <p>{{ character.race }} {{ character.character_class }} (Level {{ character.level }})</p>
+        </div>
+
+        {% if not is_spellcaster %}
+        <div class="non-spellcaster">
+            <h2>This character cannot cast spells</h2>
+            <p>{{ character.character_class }} is not a spellcasting class.</p>
+        </div>
+        {% else %}
+
+        <div class="spell-stats">
+            <div class="stat-box">
+                <div class="stat-value">{{ cantrips_known }}</div>
+                <div class="stat-label">Cantrips Known</div>
+            </div>
+            {% if spells_known > 0 %}
+            <div class="stat-box">
+                <div class="stat-value">{{ spells_known }}</div>
+                <div class="stat-label">Spells Known</div>
+            </div>
+            {% endif %}
+            <div class="stat-box">
+                <div class="stat-value">{{ known_spells|length }}</div>
+                <div class="stat-label">Currently Known</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">{{ prepared_spells|length }}</div>
+                <div class="stat-label">Prepared</div>
+            </div>
+        </div>
+
+        <div class="spell-slots">
+            <h3>Spell Slots</h3>
+            {% for level in range(1, 10) %}
+            {% if max_slots.get(level, 0) > 0 %}
+            <div style="margin-bottom: 10px;">
+                <strong>Level {{ level }}:</strong>
+                {% for i in range(max_slots[level]) %}
+                {% if i < current_slots.get(level, 0) %} <span class="slot-level">●</span>
+                    {% else %}
+                    <span class="slot-level empty">○</span>
+                    {% endif %}
+                    {% endfor %}
+                    <span style="margin-left: 10px; color: #6c757d;">
+                        ({{ current_slots.get(level, 0) }}/{{ max_slots[level] }})
+                    </span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+
+        {% for level in range(0, 4) %}
+        {% if available_spells.get(level) %}
+        <div class="spell-section">
+            <h3>
+                {% if level == 0 %}
+                Cantrips
+                {% else %}
+                Level {{ level }} Spells
+                {% endif %}
+            </h3>
+            <div class="spell-list">
+                {% for spell in available_spells[level] %}
+                <div class="spell-item 
+                        {% if spell in known_spells %}known{% endif %}
+                        {% if spell in prepared_spells %}prepared{% endif %}">
+                    <div class="spell-name">{{ spell }}</div>
+                    <div style="font-size: 12px; color: #6c757d;">
+                        {% if spell in known_spells %}
+                        {% if spell in prepared_spells %}
+                        ✓ Known & Prepared
+                        {% else %}
+                        ✓ Known (not prepared)
+                        {% endif %}
+                        {% else %}
+                        Available to learn
+                        {% endif %}
+                    </div>
+                    {% if spell in prepared_spells %}
+                    <div class="spell-actions">
+                        {% if level == 0 %}
+                        <button class="cast-btn" data-spell="{{ spell|e }}" data-level="{{ level }}"
+                            onclick="castSpellFromButton(this)">
+                            Cast Cantrip
+                        </button>
+                        {% else %}
+                        <button class="cast-btn" data-spell="{{ spell|e }}" data-level="{{ level }}"
+                            onclick="castSpellFromButton(this)" {% if current_slots.get(level, 0)==0 %}disabled{% endif
+                            %}>
+                            Cast (Level {{ level }})
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        <div class="rest-section">
+            <h3>Rest and Recovery</h3>
+            <p>Long rest restores all hit points and spell slots</p>
+            <button class="rest-btn" onclick="longRest()">Take Long Rest</button>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <script>
+        function castSpell(spellName, spellLevel) {
+            fetch(`/character/{{ character.id }}/cast_spell`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    spell_name: spellName,
+                    spell_level: spellLevel
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        location.reload(); // Refresh to update spell slots
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to cast spell');
+                });
+        }
+
+        function castSpellFromButton(button) {
+            const spellName = button.getAttribute('data-spell');
+            const spellLevel = parseInt(button.getAttribute('data-level'));
+            castSpell(spellName, spellLevel);
+        }
+
+        function longRest() {
+            if (confirm('Take a long rest? This will restore all HP and spell slots.')) {
+                fetch(`/character/{{ character.id }}/long_rest`, {
+                    method: 'POST',
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert(data.message);
+                            location.reload(); // Refresh to update display
+                        } else {
+                            alert('Error taking long rest');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Failed to take long rest');
+                    });
+            }
+        }
+    </script>
+</body>
+
+</html>

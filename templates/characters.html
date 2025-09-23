@@ -302,6 +302,10 @@
                 <div class="character-actions">
                     <a href="{{ url_for('character_inventory', character_id=character.id) }}" class="action-btn">📦
                         Manage Inventory</a>
+                    {% if character.is_spellcaster() %}
+                    <a href="{{ url_for('view_character_spells', character_id=character.id) }}" class="action-btn">🪄
+                        Spells</a>
+                    {% endif %}
                 </div>
 
                 {% if character.inventory %}

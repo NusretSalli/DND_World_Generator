@@ -47,6 +47,89 @@
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 10px;
+            margin-top: 20px;
+        }
+
+        .stat-generation {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+
+        .generation-methods label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .method-buttons {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .method-btn {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .method-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        .method-btn:hover {
+            background: #e9ecef;
+        }
+
+        .method-btn.active:hover {
+            background: #0056b3;
+        }
+
+        .generate-btn {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .generate-btn:hover {
+            background: #218838;
+        }
+
+        .racial-info {
+            margin-top: 10px;
+            padding: 8px;
+            background: #e9ecef;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+
+        .stat-input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-input-group input {
+            flex: 1;
+        }
+
+        .modifier {
+            font-weight: bold;
+            color: #6c757d;
+            min-width: 40px;
         }
 
         .stat input {
@@ -142,30 +225,65 @@
             </select>
 
             <h2>Stats</h2>
+            <div class="stat-generation">
+                <div class="generation-methods">
+                    <label>Ability Score Generation Method:</label>
+                    <div class="method-buttons">
+                        <button type="button" id="roll-4d6-btn" class="method-btn active">Roll 4d6 Drop Lowest</button>
+                        <button type="button" id="standard-array-btn" class="method-btn">Standard Array</button>
+                        <button type="button" id="point-buy-btn" class="method-btn">Point Buy</button>
+                        <button type="button" id="manual-btn" class="method-btn">Manual Entry</button>
+                    </div>
+                    <button type="button" id="generate-stats-btn" class="generate-btn">Generate New Stats</button>
+                </div>
+
+                <div class="racial-info">
+                    <p id="racial-bonuses-display">Select a race to see racial bonuses</p>
+                </div>
+            </div>
+
             <div class="stats">
                 <div class="stat">
                     <label for="strength">Strength:</label>
-                    <input type="number" id="strength" name="strength" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="strength" name="strength" min="1" max="20" value="10">
+                        <span class="modifier" id="str-modifier">(+0)</span>
+                    </div>
                 </div>
                 <div class="stat">
                     <label for="dexterity">Dexterity:</label>
-                    <input type="number" id="dexterity" name="dexterity" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="dexterity" name="dexterity" min="1" max="20" value="10">
+                        <span class="modifier" id="dex-modifier">(+0)</span>
+                    </div>
                 </div>
                 <div class="stat">
                     <label for="constitution">Constitution:</label>
-                    <input type="number" id="constitution" name="constitution" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="constitution" name="constitution" min="1" max="20" value="10">
+                        <span class="modifier" id="con-modifier">(+0)</span>
+                    </div>
                 </div>
                 <div class="stat">
                     <label for="intelligence">Intelligence:</label>
-                    <input type="number" id="intelligence" name="intelligence" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="intelligence" name="intelligence" min="1" max="20" value="10">
+                        <span class="modifier" id="int-modifier">(+0)</span>
+                    </div>
                 </div>
                 <div class="stat">
                     <label for="wisdom">Wisdom:</label>
-                    <input type="number" id="wisdom" name="wisdom" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="wisdom" name="wisdom" min="1" max="20" value="10">
+                        <span class="modifier" id="wis-modifier">(+0)</span>
+                    </div>
                 </div>
                 <div class="stat">
                     <label for="charisma">Charisma:</label>
-                    <input type="number" id="charisma" name="charisma" min="1" max="20" value="10">
+                    <div class="stat-input-group">
+                        <input type="number" id="charisma" name="charisma" min="1" max="20" value="10">
+                        <span class="modifier" id="cha-modifier">(+0)</span>
+                    </div>
                 </div>
             </div>
 
@@ -173,6 +291,92 @@
         </form>
     </div>
     <script>
+        let currentMethod = '4d6';
+
+        // Racial bonuses data (matching the Python backend)
+        const racialBonuses = {
+            'human': { 'strength': 1, 'dexterity': 1, 'constitution': 1, 'intelligence': 1, 'wisdom': 1, 'charisma': 1 },
+            'elf': { 'dexterity': 2 },
+            'dwarf': { 'constitution': 2 },
+            'halfling': { 'dexterity': 2 },
+            'dragonborn': { 'strength': 2, 'charisma': 1 },
+            'gnome': { 'intelligence': 2 },
+            'half-elf': { 'charisma': 2, 'note': 'Plus +1 to two other abilities of choice' },
+            'half-orc': { 'strength': 2, 'constitution': 1 },
+            'tiefling': { 'intelligence': 1, 'charisma': 2 },
+        };
+
+        function calculateModifier(score) {
+            return Math.floor((score - 10) / 2);
+        }
+
+        function formatModifier(modifier) {
+            return modifier >= 0 ? `(+${modifier})` : `(${modifier})`;
+        }
+
+        function updateModifiers() {
+            const abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+            abilities.forEach(ability => {
+                const score = parseInt(document.getElementById(ability).value) || 10;
+                const modifier = calculateModifier(score);
+                const shortName = ability.substring(0, 3);
+                document.getElementById(`${shortName}-modifier`).textContent = formatModifier(modifier);
+            });
+        }
+
+        function updateRacialBonusDisplay() {
+            const race = document.getElementById('race').value;
+            const bonuses = racialBonuses[race] || {};
+            const racialInfo = document.getElementById('racial-bonuses-display');
+
+            if (Object.keys(bonuses).length === 0) {
+                racialInfo.textContent = 'No racial bonuses for this race.';
+                return;
+            }
+
+            let bonusText = `${race.charAt(0).toUpperCase() + race.slice(1)} Racial Bonuses: `;
+            const bonusStrings = [];
+
+            for (const [ability, bonus] of Object.entries(bonuses)) {
+                if (ability === 'note') {
+                    bonusStrings.push(bonus);
+                } else {
+                    bonusStrings.push(`${ability.charAt(0).toUpperCase() + ability.slice(1)} +${bonus}`);
+                }
+            }
+
+            racialInfo.textContent = bonusText + bonusStrings.join(', ');
+        }
+
+        function setAbilityScores(scores) {
+            for (const [ability, score] of Object.entries(scores)) {
+                const input = document.getElementById(ability);
+                if (input) {
+                    input.value = score;
+                }
+            }
+            updateModifiers();
+        }
+
+        function generateAbilityScores() {
+            const race = document.getElementById('race').value;
+            fetch(`/generate_ability_scores?method=${currentMethod}&race=${race}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        alert('Error generating scores: ' + data.error);
+                        return;
+                    }
+                    setAbilityScores(data.scores);
+                    console.log(`Generated ${data.method} scores for ${data.race}:`, data.scores);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to generate ability scores. Please try again.');
+                });
+        }
+
+        // Event listeners
         document.getElementById('random-name-btn').addEventListener('click', () => {
             const race = document.getElementById('race').value;
             const gender = document.querySelector('input[name="gender"]:checked').value;
@@ -181,6 +385,64 @@
                 .then(data => {
                     document.getElementById('name').value = data.name;
                 });
+        });
+
+        // Method selection buttons
+        document.getElementById('roll-4d6-btn').addEventListener('click', () => {
+            currentMethod = '4d6';
+            setActiveMethod('roll-4d6-btn');
+        });
+
+        document.getElementById('standard-array-btn').addEventListener('click', () => {
+            currentMethod = 'standard';
+            setActiveMethod('standard-array-btn');
+        });
+
+        document.getElementById('point-buy-btn').addEventListener('click', () => {
+            currentMethod = 'point_buy';
+            setActiveMethod('point-buy-btn');
+        });
+
+        document.getElementById('manual-btn').addEventListener('click', () => {
+            currentMethod = 'manual';
+            setActiveMethod('manual-btn');
+        });
+
+        function setActiveMethod(activeId) {
+            document.querySelectorAll('.method-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(activeId).classList.add('active');
+        }
+
+        // Generate stats button
+        document.getElementById('generate-stats-btn').addEventListener('click', () => {
+            if (currentMethod === 'manual') {
+                alert('Manual entry selected. Please enter scores manually.');
+                return;
+            }
+            generateAbilityScores();
+        });
+
+        // Race change handler
+        document.getElementById('race').addEventListener('change', () => {
+            updateRacialBonusDisplay();
+            // Auto-regenerate if not in manual mode
+            if (currentMethod !== 'manual') {
+                generateAbilityScores();
+            }
+        });
+
+        // Ability score input handlers for modifier updates
+        const abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+        abilities.forEach(ability => {
+            document.getElementById(ability).addEventListener('input', updateModifiers);
+        });
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateModifiers();
+            updateRacialBonusDisplay();
+            // Generate initial stats
+            generateAbilityScores();
         });
     </script>
 </body>
