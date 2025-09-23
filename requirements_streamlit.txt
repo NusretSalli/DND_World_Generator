@@ -1,0 +1,35 @@
+# D&D World Generator - Complete Requirements
+# Core Flask dependencies (existing)
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.5
+Werkzeug==2.3.7
+
+# Database
+SQLAlchemy==2.0.21
+
+# Streamlit and UI dependencies (new)
+streamlit>=1.28.0
+plotly>=5.17.0
+requests>=2.31.0
+
+# Data processing and utilities
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Optional: For enhanced functionality
+watchdog>=3.0.0  # For file watching in development
+Pillow>=10.0.0   # For image processing if needed
+
+# Development and packaging (optional)
+pyinstaller>=5.13.0  # For creating desktop executables
+
+# Dice and D&D utilities (if using external libraries)
+# dice>=3.1.0  # Alternative dice library if needed
+
+# Security and validation
+python-dotenv>=1.0.0  # For environment variables
+
+# API and web utilities
+urllib3>=1.26.0
+certifi>=2023.7.22
