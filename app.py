@@ -16,6 +16,7 @@ import json
 from items import CLASS_EQUIPMENT, ALL_ITEMS, CharacterEquipment, EquipmentSlot, ItemRarity, ItemType
 from story import story_generator
 from enemies import STANDARD_ENEMIES, get_enemy_by_name, get_random_enemy_for_level
+from dice_utils import DiceRoller, apply_racial_bonuses, calculate_ability_modifier
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -221,6 +222,21 @@ class Character(db.Model):
     gold = db.Column(db.Integer, default=0)
     platinum = db.Column(db.Integer, default=0)
     
+    # Spell System - Track current spell slots (max slots calculated dynamically)
+    current_spell_slots_1 = db.Column(db.Integer, default=0)
+    current_spell_slots_2 = db.Column(db.Integer, default=0)
+    current_spell_slots_3 = db.Column(db.Integer, default=0)
+    current_spell_slots_4 = db.Column(db.Integer, default=0)
+    current_spell_slots_5 = db.Column(db.Integer, default=0)
+    current_spell_slots_6 = db.Column(db.Integer, default=0)
+    current_spell_slots_7 = db.Column(db.Integer, default=0)
+    current_spell_slots_8 = db.Column(db.Integer, default=0)
+    current_spell_slots_9 = db.Column(db.Integer, default=0)
+    
+    # Known and prepared spells (stored as JSON strings)
+    known_spells = db.Column(db.Text, default='[]')  # JSON list of spell names
+    prepared_spells = db.Column(db.Text, default='[]')  # JSON list of prepared spell names
+    
     # Relationships - Link to items owned by this character
     inventory = db.relationship(
         'Item',
@@ -425,6 +441,92 @@ class Character(db.Model):
     @property
     def carrying_capacity(self):
         return self.strength * 15  # Basic carrying capacity rules
+    
+    # Spell Management Methods
+    def get_spell_manager(self):
+        """Get a spell manager for this character."""
+        from spells import SpellManager
+        return SpellManager(self.character_class, self.level)
+    
+    def is_spellcaster(self):
+        """Check if this character can cast spells."""
+        return self.get_spell_manager().is_spellcaster()
+    
+    def get_max_spell_slots(self):
+        """Get maximum spell slots for this character's class and level."""
+        if not self.is_spellcaster():
+            return {}
+        
+        from spells import SPELL_SLOTS_BY_CLASS_LEVEL
+        class_progression = SPELL_SLOTS_BY_CLASS_LEVEL.get(self.character_class.lower(), {})
+        return class_progression.get(self.level, {})
+    
+    def get_current_spell_slots(self):
+        """Get current available spell slots."""
+        return {
+            1: self.current_spell_slots_1,
+            2: self.current_spell_slots_2,
+            3: self.current_spell_slots_3,
+            4: self.current_spell_slots_4,
+            5: self.current_spell_slots_5,
+            6: self.current_spell_slots_6,
+            7: self.current_spell_slots_7,
+            8: self.current_spell_slots_8,
+            9: self.current_spell_slots_9,
+        }
+    
+    def set_current_spell_slots(self, slots_dict):
+        """Set current spell slots from a dictionary."""
+        self.current_spell_slots_1 = slots_dict.get(1, 0)
+        self.current_spell_slots_2 = slots_dict.get(2, 0)
+        self.current_spell_slots_3 = slots_dict.get(3, 0)
+        self.current_spell_slots_4 = slots_dict.get(4, 0)
+        self.current_spell_slots_5 = slots_dict.get(5, 0)
+        self.current_spell_slots_6 = slots_dict.get(6, 0)
+        self.current_spell_slots_7 = slots_dict.get(7, 0)
+        self.current_spell_slots_8 = slots_dict.get(8, 0)
+        self.current_spell_slots_9 = slots_dict.get(9, 0)
+    
+    def refresh_spell_slots(self):
+        """Refresh spell slots to maximum (long rest)."""
+        max_slots = self.get_max_spell_slots()
+        self.set_current_spell_slots(max_slots)
+    
+    def use_spell_slot(self, level):
+        """Use a spell slot of the given level."""
+        current_slots = self.get_current_spell_slots()
+        if current_slots.get(level, 0) > 0:
+            slot_attr = f'current_spell_slots_{level}'
+            current_value = getattr(self, slot_attr)
+            setattr(self, slot_attr, current_value - 1)
+            return True
+        return False
+    
+    def get_known_spells_list(self):
+        """Get list of known spells."""
+        import json
+        try:
+            return json.loads(self.known_spells or '[]')
+        except:
+            return []
+    
+    def set_known_spells_list(self, spells):
+        """Set list of known spells."""
+        import json
+        self.known_spells = json.dumps(spells)
+    
+    def get_prepared_spells_list(self):
+        """Get list of prepared spells."""
+        import json
+        try:
+            return json.loads(self.prepared_spells or '[]')
+        except:
+            return []
+    
+    def set_prepared_spells_list(self, spells):
+        """Set list of prepared spells."""
+        import json
+        self.prepared_spells = json.dumps(spells)
 
 # Combat System Models
 
@@ -795,6 +897,147 @@ def generate_name():
 
     return jsonify(name=name)
 
+
+@app.route('/generate_ability_scores')
+def generate_ability_scores():
+    """Generate ability scores using different methods."""
+    method = request.args.get('method', '4d6')
+    race = request.args.get('race', 'human')
+    
+    if method == '4d6':
+        # Roll 4d6 drop lowest for each ability
+        base_scores = DiceRoller.roll_full_ability_scores()
+    elif method == 'standard':
+        # Use standard array
+        base_scores = DiceRoller.standard_array()
+    elif method == 'point_buy':
+        # Start with point buy base (all 8s)
+        base_scores = DiceRoller.point_buy_base()
+    else:
+        # Default to 4d6
+        base_scores = DiceRoller.roll_full_ability_scores()
+    
+    # Apply racial bonuses
+    final_scores = apply_racial_bonuses(base_scores, race)
+    
+    # Calculate modifiers for display
+    modifiers = {ability: calculate_ability_modifier(score) 
+                for ability, score in final_scores.items()}
+    
+    return jsonify({
+        'scores': final_scores,
+        'modifiers': modifiers,
+        'method': method,
+        'race': race
+    })
+
+
+@app.route('/roll_dice')
+def roll_dice():
+    """Roll dice using standard notation."""
+    dice_notation = request.args.get('dice', '1d20')
+    
+    try:
+        result = DiceRoller.roll(dice_notation)
+        return jsonify({
+            'total': result.total,
+            'rolls': result.rolls,
+            'modifier': result.modifier,
+            'notation': result.dice_notation,
+            'description': str(result)
+        })
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/character/<int:character_id>/spells')
+def view_character_spells(character_id):
+    """View spells for a character."""
+    character = Character.query.get_or_404(character_id)
+    
+    if not character.is_spellcaster():
+        return render_template('character_spells.html', 
+                             character=character, 
+                             is_spellcaster=False)
+    
+    # Get spell information
+    spell_manager = character.get_spell_manager()
+    max_slots = character.get_max_spell_slots()
+    current_slots = character.get_current_spell_slots()
+    known_spells = character.get_known_spells_list()
+    prepared_spells = character.get_prepared_spells_list()
+    
+    # Get available spells by level
+    available_spells = {}
+    for level in range(0, 4):  # Show cantrips through 3rd level for now
+        available_spells[level] = spell_manager.get_available_spells(level)
+    
+    from spells import get_cantrips_known, get_spells_known
+    cantrips_known = get_cantrips_known(character.character_class, character.level)
+    spells_known = get_spells_known(character.character_class, character.level)
+    
+    return render_template('character_spells.html',
+                         character=character,
+                         is_spellcaster=True,
+                         max_slots=max_slots,
+                         current_slots=current_slots,
+                         known_spells=known_spells,
+                         prepared_spells=prepared_spells,
+                         available_spells=available_spells,
+                         cantrips_known=cantrips_known,
+                         spells_known=spells_known)
+
+
+@app.route('/character/<int:character_id>/cast_spell', methods=['POST'])
+def cast_spell(character_id):
+    """Cast a spell, using a spell slot."""
+    character = Character.query.get_or_404(character_id)
+    spell_name = request.json.get('spell_name')
+    spell_level = int(request.json.get('spell_level', 1))
+    
+    if not character.is_spellcaster():
+        return jsonify({'error': 'Character cannot cast spells'}), 400
+    
+    if spell_name not in character.get_prepared_spells_list():
+        return jsonify({'error': 'Spell not prepared'}), 400
+    
+    # For cantrips, no spell slot needed
+    if spell_level == 0:
+        return jsonify({'success': True, 'message': f'Cast {spell_name} (cantrip)'})
+    
+    # Try to use a spell slot
+    if character.use_spell_slot(spell_level):
+        db.session.commit()
+        return jsonify({
+            'success': True, 
+            'message': f'Cast {spell_name} using level {spell_level} slot',
+            'current_slots': character.get_current_spell_slots()
+        })
+    else:
+        return jsonify({'error': 'No spell slots available'}), 400
+
+
+@app.route('/character/<int:character_id>/long_rest', methods=['POST'])
+def long_rest(character_id):
+    """Perform a long rest, restoring HP and spell slots."""
+    character = Character.query.get_or_404(character_id)
+    
+    # Restore HP
+    character.current_hp = character.max_hp
+    
+    # Restore spell slots if spellcaster
+    if character.is_spellcaster():
+        character.refresh_spell_slots()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': 'Long rest completed. HP and spell slots restored.',
+        'current_hp': character.current_hp,
+        'current_slots': character.get_current_spell_slots() if character.is_spellcaster() else {}
+    })
+
 def calculate_max_hp(char_class, constitution_mod, level=1):
     # Base HP calculation for D&D 5E
     class_hit_dice = {
@@ -849,6 +1092,32 @@ def create_character():
     # Add and commit to database
     db.session.add(new_character)
     db.session.commit()
+    
+    # Initialize spell slots for spellcasting classes
+    if new_character.is_spellcaster():
+        new_character.refresh_spell_slots()
+        
+        # Initialize with some starting spells based on class
+        spell_manager = new_character.get_spell_manager()
+        available_cantrips = spell_manager.get_available_spells(0)
+        available_1st_level = spell_manager.get_available_spells(1)
+        
+        # Give them some starting spells (simplified selection)
+        from spells import get_cantrips_known, get_spells_known
+        cantrips_known = get_cantrips_known(char_class, 1)
+        spells_known = get_spells_known(char_class, 1)
+        
+        starting_spells = []
+        # Add cantrips
+        starting_spells.extend(available_cantrips[:cantrips_known])
+        # Add 1st level spells for classes that know spells
+        if spells_known > 0:
+            starting_spells.extend(available_1st_level[:spells_known])
+        
+        new_character.set_known_spells_list(starting_spells)
+        new_character.set_prepared_spells_list(starting_spells)  # All known spells are prepared initially
+        
+        db.session.commit()
     
     # Add starting equipment based on class
     add_starting_equipment(new_character)
