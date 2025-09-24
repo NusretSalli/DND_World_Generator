@@ -680,7 +680,7 @@ else:
 # Navigation menu
 page = st.sidebar.selectbox(
     "Navigate to:",
-    ["🏠 Dashboard", "👤 Characters", "⚔️ Combat", "📜 Spells", "🎲 Dice Roller", "📚 Story Generator"],
+    ["🏠 Dashboard", "👤 Characters", "⚔️ Combat", "📜 Spells", "🎲 Dice Roller", "📚 Story Generator", "🧙‍♂️ AI Game Master"],
     key="navigation"
 )
 
@@ -1702,9 +1702,635 @@ def main():
             show_dice_roller()
         elif page == "📚 Story Generator":
             show_story_generator()
+        elif page == "🧙‍♂️ AI Game Master":
+            show_ai_game_master()
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.info("Try refreshing the page or check your Flask backend connection.")
+
+# AI Game Master Functions
+def show_ai_game_master():
+    """AI Game Master page with dynamic storytelling"""
+    st.header("🧙‍♂️ AI Game Master")
+    
+    # Get characters for context
+    characters = get_characters_optimized()
+    
+    # Initialize AI GM session state
+    if 'gm_session' not in st.session_state:
+        st.session_state.gm_session = {
+            'story_log': [],
+            'current_scene': None,
+            'party_status': 'exploring',
+            'scene_counter': 0,
+            'active_npcs': [],
+            'inventory_rewards': []
+        }
+    
+    # GM Control Panel
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("🎭 Active Campaign")
+        
+        # Current scene display
+        if st.session_state.gm_session['current_scene']:
+            scene = st.session_state.gm_session['current_scene']
+            
+            # Scene header
+            scene_type_emoji = {
+                'narrative': '📖',
+                'combat': '⚔️',
+                'social': '🗣️',
+                'exploration': '🔍',
+                'rest': '🏕️',
+                'reward': '🎁'
+            }
+            
+            st.markdown(f"## {scene_type_emoji.get(scene.get('type', 'narrative'), '📖')} {scene.get('title', 'Current Scene')}")
+            
+            # Scene description
+            st.markdown(f"*{scene.get('description', 'The adventure continues...')}*")
+            
+            # Dynamic scene actions
+            if scene.get('type') == 'combat':
+                show_gm_combat_scene(scene, characters)
+            elif scene.get('type') == 'social':
+                show_gm_social_scene(scene, characters)
+            elif scene.get('type') == 'exploration':
+                show_gm_exploration_scene(scene, characters)
+            elif scene.get('type') == 'reward':
+                show_gm_reward_scene(scene, characters)
+            else:
+                show_gm_narrative_scene(scene, characters)
+        
+        else:
+            st.info("🎬 Ready to begin your adventure! Generate a new scene to start.")
+            
+        # GM Action Buttons
+        st.markdown("---")
+        gm_col1, gm_col2, gm_col3, gm_col4 = st.columns(4)
+        
+        with gm_col1:
+            if st.button("🎲 Generate Scene", type="primary"):
+                generate_new_scene(characters)
+                st.rerun()
+        
+        with gm_col2:
+            if st.button("⚔️ Trigger Combat"):
+                trigger_combat_encounter(characters)
+                st.rerun()
+        
+        with gm_col3:
+            if st.button("🎁 Give Reward"):
+                trigger_reward_scene(characters)
+                st.rerun()
+        
+        with gm_col4:
+            if st.button("🔄 Continue Story"):
+                continue_current_story(characters)
+                st.rerun()
+    
+    with col2:
+        st.subheader("📊 Campaign Status")
+        
+        # Party status
+        status_colors = {
+            'exploring': '🟢',
+            'in_combat': '🔴',
+            'resting': '🟡',
+            'social': '🔵'
+        }
+        status = st.session_state.gm_session.get('party_status', 'exploring')
+        st.markdown(f"**Party Status:** {status_colors.get(status, '⚪')} {status.title()}")
+        
+        st.metric("Scenes Played", st.session_state.gm_session.get('scene_counter', 0))
+        
+        # Active NPCs
+        if st.session_state.gm_session.get('active_npcs'):
+            st.markdown("**Active NPCs:**")
+            for npc in st.session_state.gm_session['active_npcs']:
+                st.markdown(f"• {npc.get('name', 'Unknown')} - {npc.get('role', 'NPC')}")
+        
+        # Recent rewards
+        if st.session_state.gm_session.get('inventory_rewards'):
+            st.markdown("**Recent Rewards:**")
+            for reward in st.session_state.gm_session['inventory_rewards'][-3:]:
+                st.markdown(f"• {reward}")
+        
+        st.markdown("---")
+        
+        # Campaign controls
+        st.subheader("🎮 GM Controls")
+        
+        if st.button("📋 View Story Log"):
+            show_story_log()
+        
+        if st.button("🔄 Reset Campaign"):
+            if st.checkbox("Confirm Reset"):
+                st.session_state.gm_session = {
+                    'story_log': [],
+                    'current_scene': None,
+                    'party_status': 'exploring',
+                    'scene_counter': 0,
+                    'active_npcs': [],
+                    'inventory_rewards': []
+                }
+                st.success("Campaign reset!")
+                st.rerun()
+
+def generate_new_scene(characters):
+    """Generate a new scene with the AI GM"""
+    scene_types = ['narrative', 'combat', 'social', 'exploration', 'rest', 'reward']
+    import random
+    
+    # Create a dynamic scene based on party status and random elements
+    scene_type = random.choice(scene_types)
+    
+    # Scene templates
+    scene_templates = {
+        'narrative': {
+            'titles': ['The Path Ahead', 'A Strange Discovery', 'Whispers in the Wind', 'An Unexpected Turn'],
+            'descriptions': [
+                'As you continue your journey, something catches your attention in the distance...',
+                'The ancient ruins hold secrets that beckon to be explored...',
+                'A mysterious figure watches from the shadows...',
+                'The very air seems to hum with magical energy...'
+            ]
+        },
+        'combat': {
+            'titles': ['Ambush!', 'Hostile Encounter', 'Battle Erupts', 'Enemies Attack'],
+            'descriptions': [
+                'Suddenly, enemies emerge from their hiding spots! Roll for initiative!',
+                'The peaceful moment is shattered as combat begins!',
+                'Your weapons are needed as danger presents itself!',
+                'The tension breaks as battle is joined!'
+            ]
+        },
+        'social': {
+            'titles': ['A Chance Meeting', 'Diplomatic Encounter', 'Village Folk', 'The Stranger'],
+            'descriptions': [
+                'You encounter someone who might have information or need assistance...',
+                'A conversation begins that could change your path...',
+                'The locals have stories to tell and favors to ask...',
+                'This meeting could lead to new opportunities...'
+            ]
+        },
+        'exploration': {
+            'titles': ['Hidden Passage', 'Secret Chamber', 'Mysterious Door', 'Ancient Mechanism'],
+            'descriptions': [
+                'You discover something that requires investigation...',
+                'Your skills are needed to uncover hidden secrets...',
+                'The environment holds challenges to overcome...',
+                'Ancient puzzles await your clever solutions...'
+            ]
+        },
+        'reward': {
+            'titles': ['Treasure Found!', 'Hidden Cache', 'Generous Reward', 'Magical Discovery'],
+            'descriptions': [
+                'Your efforts have been rewarded with valuable treasure!',
+                'You uncover a cache of useful items and gold!',
+                'Someone shows their gratitude with generous gifts!',
+                'Magic items reveal themselves to worthy adventurers!'
+            ]
+        }
+    }
+    
+    template = scene_templates.get(scene_type, scene_templates['narrative'])
+    title = random.choice(template['titles'])
+    description = random.choice(template['descriptions'])
+    
+    # Create the scene
+    scene = {
+        'type': scene_type,
+        'title': title,
+        'description': description,
+        'id': f"scene_{st.session_state.gm_session['scene_counter'] + 1}",
+        'characters_present': [c['name'] for c in characters[:4]] if characters else []
+    }
+    
+    # Add scene-specific data
+    if scene_type == 'combat':
+        scene['enemies'] = generate_combat_enemies(characters)
+        st.session_state.gm_session['party_status'] = 'in_combat'
+    elif scene_type == 'social':
+        scene['npcs'] = generate_scene_npcs()
+        st.session_state.gm_session['party_status'] = 'social'
+        st.session_state.gm_session['active_npcs'].extend(scene['npcs'])
+    elif scene_type == 'reward':
+        scene['rewards'] = generate_scene_rewards(characters)
+        
+    # Update session
+    st.session_state.gm_session['current_scene'] = scene
+    st.session_state.gm_session['scene_counter'] += 1
+    st.session_state.gm_session['story_log'].append(scene)
+
+def generate_combat_enemies(characters):
+    """Generate appropriate enemies for combat"""
+    import random
+    
+    if not characters:
+        return [{'name': 'Goblin Scout', 'hp': 15, 'ac': 12}]
+    
+    party_level = sum(c.get('level', 1) for c in characters) // len(characters)
+    
+    enemy_templates = {
+        1: [
+            {'name': 'Goblin', 'hp': 15, 'ac': 12},
+            {'name': 'Wolf', 'hp': 18, 'ac': 13},
+            {'name': 'Bandit', 'hp': 20, 'ac': 14}
+        ],
+        2: [
+            {'name': 'Orc Warrior', 'hp': 35, 'ac': 15},
+            {'name': 'Hobgoblin', 'hp': 32, 'ac': 16},
+            {'name': 'Dire Wolf', 'hp': 42, 'ac': 14}
+        ],
+        3: [
+            {'name': 'Ogre', 'hp': 65, 'ac': 16},
+            {'name': 'Owlbear', 'hp': 58, 'ac': 15},
+            {'name': 'Veteran Soldier', 'hp': 68, 'ac': 17}
+        ]
+    }
+    
+    enemy_tier = min(max(1, party_level), 3)
+    possible_enemies = enemy_templates[enemy_tier]
+    
+    num_enemies = random.randint(1, min(3, len(characters) + 1))
+    return random.choices(possible_enemies, k=num_enemies)
+
+def generate_scene_npcs():
+    """Generate NPCs for social encounters"""
+    import random
+    
+    npc_templates = [
+        {'name': 'Elara the Merchant', 'role': 'Trader', 'disposition': 'friendly'},
+        {'name': 'Gruff the Blacksmith', 'role': 'Craftsman', 'disposition': 'neutral'},
+        {'name': 'Sister Amelia', 'role': 'Cleric', 'disposition': 'helpful'},
+        {'name': 'Captain Roderick', 'role': 'Guard Captain', 'disposition': 'suspicious'},
+        {'name': 'Old Henrik', 'role': 'Village Elder', 'disposition': 'wise'},
+        {'name': 'Zara the Mysterious', 'role': 'Stranger', 'disposition': 'cryptic'}
+    ]
+    
+    return [random.choice(npc_templates)]
+
+def generate_scene_rewards(characters):
+    """Generate appropriate rewards"""
+    import random
+    
+    if not characters:
+        return ['50 gold pieces', 'Healing Potion']
+    
+    party_level = sum(c.get('level', 1) for c in characters) // len(characters)
+    
+    reward_templates = {
+        1: ['Healing Potion', '25 gold pieces', 'Silver Ring', 'Leather Armor'],
+        2: ['Greater Healing Potion', '100 gold pieces', 'Magic Weapon (+1)', 'Chain Mail'],
+        3: ['Superior Healing Potion', '250 gold pieces', 'Magic Weapon (+2)', 'Plate Armor', 'Wand of Magic Missiles']
+    }
+    
+    reward_tier = min(max(1, party_level), 3)
+    possible_rewards = reward_templates[reward_tier]
+    
+    num_rewards = random.randint(1, 3)
+    return random.choices(possible_rewards, k=num_rewards)
+
+def show_gm_combat_scene(scene, characters):
+    """Display combat scene interface"""
+    st.markdown("### ⚔️ Combat Encounter!")
+    
+    enemies = scene.get('enemies', [])
+    
+    if enemies:
+        st.markdown("**Enemies encountered:**")
+        for enemy in enemies:
+            st.markdown(f"• **{enemy['name']}** (HP: {enemy['hp']}, AC: {enemy['ac']})")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🎲 Roll Initiative", key="roll_init"):
+            import random
+            party_init = random.randint(1, 20) + 2
+            enemy_init = random.randint(1, 20) + 1
+            
+            if party_init >= enemy_init:
+                st.success(f"🎉 Party goes first! (Party: {party_init}, Enemies: {enemy_init})")
+            else:
+                st.warning(f"⚠️ Enemies go first! (Enemies: {enemy_init}, Party: {party_init})")
+            
+    with col2:
+        if st.button("⚔️ Start Combat Manager", key="start_combat"):
+            st.session_state.navigation = "⚔️ Combat"
+            st.rerun()
+
+def show_gm_social_scene(scene, characters):
+    """Display social encounter interface"""
+    st.markdown("### 🗣️ Social Encounter")
+    
+    npcs = scene.get('npcs', [])
+    
+    if npcs:
+        for npc in npcs:
+            st.markdown(f"**{npc['name']}** - {npc['role']} ({npc['disposition']})")
+    
+    response_options = [
+        "Approach diplomatically",
+        "Ask for information", 
+        "Offer assistance",
+        "Remain cautious"
+    ]
+    
+    chosen_response = st.selectbox("How do you respond?", response_options)
+    
+    if st.button("🎭 Make Response"):
+        st.success(f"You choose to: {chosen_response.lower()}")
+        # Generate NPC reaction
+        reactions = [
+            "The NPC seems pleased with your approach.",
+            "They provide useful information about the area.",
+            "They offer to help you in return.",
+            "They become more trusting of your party."
+        ]
+        import random
+        st.info(random.choice(reactions))
+
+def show_gm_exploration_scene(scene, characters):
+    """Display exploration scene interface"""
+    st.markdown("### 🔍 Exploration Challenge")
+    
+    challenges = [
+        "Ancient puzzle mechanism",
+        "Hidden trap to disarm", 
+        "Locked door to pick",
+        "Magical barrier to dispel",
+        "Secret passage to find"
+    ]
+    
+    import random
+    challenge = random.choice(challenges)
+    st.markdown(f"**Challenge:** {challenge}")
+    
+    skills = ["Investigation", "Perception", "Thieves' Tools", "Arcana", "Athletics"]
+    chosen_skill = st.selectbox("Which skill do you use?", skills)
+    
+    if st.button("🎲 Make Skill Check"):
+        roll = random.randint(1, 20)
+        total = roll + random.randint(1, 6)  # Simulate modifier
+        
+        st.markdown(f"**Roll:** {roll} + modifier = **{total}**")
+        
+        if total >= 15:
+            st.success("🎉 Success! You overcome the challenge!")
+        elif total >= 10:
+            st.warning("⚠️ Partial success - you make progress but face complications.")
+        else:
+            st.error("❌ The challenge proves too difficult this time.")
+
+def show_gm_reward_scene(scene, characters):
+    """Display reward scene interface"""
+    st.markdown("### 🎁 Rewards Discovered!")
+    
+    rewards = scene.get('rewards', [])
+    
+    if rewards:
+        st.markdown("**You have found:**")
+        for reward in rewards:
+            st.markdown(f"• {reward}")
+            
+        if st.button("📦 Collect Rewards"):
+            # Add to party inventory
+            st.session_state.gm_session['inventory_rewards'].extend(rewards)
+            st.success("Rewards added to party inventory!")
+            
+            # Try to add items to character inventories
+            for i, character in enumerate(characters[:len(rewards)]):
+                try:
+                    if add_item_to_character(character['id'], rewards[i]):
+                        st.success(f"Added {rewards[i]} to {character['name']}'s inventory!")
+                except:
+                    st.info(f"Could not add {rewards[i]} directly to inventory - check manually.")
+
+def show_gm_narrative_scene(scene, characters):
+    """Display narrative scene interface"""
+    st.markdown("### 📖 The Story Continues...")
+    
+    # Narrative choices
+    choices = [
+        "Investigate further",
+        "Move on cautiously", 
+        "Rest and observe",
+        "Take immediate action"
+    ]
+    
+    chosen_action = st.selectbox("What does the party do?", choices)
+    
+    if st.button("➡️ Continue Adventure"):
+        st.success(f"The party decides to: {chosen_action.lower()}")
+        # Generate consequence
+        consequences = [
+            "Your careful approach reveals new information.",
+            "The party discovers something unexpected.",
+            "Your actions attract attention from nearby creatures.",
+            "The path ahead becomes clearer."
+        ]
+        import random
+        st.info(random.choice(consequences))
+
+def trigger_combat_encounter(characters):
+    """Manually trigger a combat encounter"""
+    enemies = generate_combat_enemies(characters)
+    
+    scene = {
+        'type': 'combat',
+        'title': 'Combat Triggered!',
+        'description': 'The Game Master has initiated a combat encounter!',
+        'enemies': enemies,
+        'id': f"combat_{st.session_state.gm_session['scene_counter'] + 1}",
+        'characters_present': [c['name'] for c in characters[:4]] if characters else []
+    }
+    
+    st.session_state.gm_session['current_scene'] = scene
+    st.session_state.gm_session['scene_counter'] += 1
+    st.session_state.gm_session['story_log'].append(scene)
+    st.session_state.gm_session['party_status'] = 'in_combat'
+
+def trigger_reward_scene(characters):
+    """Manually trigger a reward scene"""
+    rewards = generate_scene_rewards(characters)
+    
+    scene = {
+        'type': 'reward',
+        'title': 'Treasure Discovered!',
+        'description': 'The Game Master grants rewards to the party!',
+        'rewards': rewards,
+        'id': f"reward_{st.session_state.gm_session['scene_counter'] + 1}",
+        'characters_present': [c['name'] for c in characters[:4]] if characters else []
+    }
+    
+    st.session_state.gm_session['current_scene'] = scene
+    st.session_state.gm_session['scene_counter'] += 1
+    st.session_state.gm_session['story_log'].append(scene)
+
+def continue_current_story(characters):
+    """Continue the current story with a follow-up scene"""
+    if not st.session_state.gm_session.get('current_scene'):
+        generate_new_scene(characters)
+        return
+    
+    # Generate a related follow-up scene
+    current_type = st.session_state.gm_session['current_scene'].get('type', 'narrative')
+    
+    # Story progression logic
+    next_scenes = {
+        'combat': ['rest', 'reward', 'exploration'],
+        'social': ['narrative', 'exploration', 'combat'],
+        'exploration': ['reward', 'combat', 'social'],
+        'reward': ['narrative', 'rest', 'social'],
+        'rest': ['narrative', 'exploration', 'social'],
+        'narrative': ['combat', 'social', 'exploration']
+    }
+    
+    import random
+    next_type = random.choice(next_scenes.get(current_type, ['narrative']))
+    
+    # Generate new scene with influenced type
+    scene_types = [next_type] * 3 + ['narrative']  # Weight toward next_type
+    scene_type = random.choice(scene_types)
+    
+    # Use scene templates from generate_new_scene
+    scene_templates = {
+        'narrative': {
+            'titles': ['The Path Ahead', 'A Strange Discovery', 'Whispers in the Wind', 'An Unexpected Turn'],
+            'descriptions': [
+                'As the previous events settle, something new catches your attention...',
+                'The consequences of your actions become apparent...',
+                'A new challenge presents itself...',
+                'The adventure continues in an unexpected direction...'
+            ]
+        },
+        'combat': {
+            'titles': ['Another Threat!', 'Reinforcements Arrive', 'Danger Returns', 'More Enemies'],
+            'descriptions': [
+                'Just when you thought it was safe, more enemies appear!',
+                'The commotion has attracted additional threats!',
+                'Your previous actions have consequences - combat erupts again!',
+                'The danger is not over yet!'
+            ]
+        },
+        'social': {
+            'titles': ['New Allies', 'Witnesses Arrive', 'Help Appears', 'Curious Onlookers'],
+            'descriptions': [
+                'Your recent actions have attracted the attention of others...',
+                'Someone approaches, having witnessed recent events...',
+                'New people arrive who might be helpful or problematic...',
+                'The situation draws interested parties...'
+            ]
+        },
+        'exploration': {
+            'titles': ['Hidden Consequences', 'New Discoveries', 'What Lies Beyond', 'Deeper Mysteries'],
+            'descriptions': [
+                'Your actions have revealed new areas to explore...',
+                'The results of your choices open new paths...',
+                'Hidden aspects of this place become apparent...',
+                'There is more here than initially met the eye...'
+            ]
+        },
+        'reward': {
+            'titles': ['Well Deserved', 'Additional Treasures', 'Grateful Benefactors', 'Hidden Rewards'],
+            'descriptions': [
+                'Your recent actions have earned additional rewards!',
+                'Hidden treasures reveal themselves after recent events!',
+                'Someone wishes to show gratitude for your deeds!',
+                'Your efforts continue to bear fruit!'
+            ]
+        },
+        'rest': {
+            'titles': ['A Moment of Peace', 'Time to Recover', 'Respite Found', 'Catching Your Breath'],
+            'descriptions': [
+                'The intensity subsides, allowing time to rest and recover...',
+                'A safe space presents itself for the party to regroup...',
+                'The immediate danger passes, providing a chance to rest...',
+                'Circumstances allow for a brief respite...'
+            ]
+        }
+    }
+    
+    template = scene_templates.get(scene_type, scene_templates['narrative'])
+    title = random.choice(template['titles'])
+    description = random.choice(template['descriptions'])
+    
+    # Create the follow-up scene
+    scene = {
+        'type': scene_type,
+        'title': title,
+        'description': description,
+        'id': f"scene_{st.session_state.gm_session['scene_counter'] + 1}",
+        'characters_present': [c['name'] for c in characters[:4]] if characters else []
+    }
+    
+    # Add scene-specific data
+    if scene_type == 'combat':
+        scene['enemies'] = generate_combat_enemies(characters)
+        st.session_state.gm_session['party_status'] = 'in_combat'
+    elif scene_type == 'social':
+        scene['npcs'] = generate_scene_npcs()
+        st.session_state.gm_session['party_status'] = 'social'
+        st.session_state.gm_session['active_npcs'].extend(scene['npcs'])
+    elif scene_type == 'reward':
+        scene['rewards'] = generate_scene_rewards(characters)
+    elif scene_type == 'rest':
+        st.session_state.gm_session['party_status'] = 'resting'
+    else:
+        st.session_state.gm_session['party_status'] = 'exploring'
+        
+    # Update session
+    st.session_state.gm_session['current_scene'] = scene
+    st.session_state.gm_session['scene_counter'] += 1
+    st.session_state.gm_session['story_log'].append(scene)
+
+def show_story_log():
+    """Display the story log"""
+    st.markdown("### 📖 Campaign Story Log")
+    
+    story_log = st.session_state.gm_session.get('story_log', [])
+    
+    if not story_log:
+        st.info("No scenes have been played yet.")
+        return
+    
+    for i, scene in enumerate(story_log, 1):
+        scene_type_emoji = {
+            'narrative': '📖',
+            'combat': '⚔️', 
+            'social': '🗣️',
+            'exploration': '🔍',
+            'rest': '🏕️',
+            'reward': '🎁'
+        }
+        
+        emoji = scene_type_emoji.get(scene.get('type', 'narrative'), '📖')
+        
+        with st.expander(f"{i}. {emoji} {scene.get('title', 'Scene')}"):
+            st.markdown(f"**Type:** {scene.get('type', 'narrative').title()}")
+            st.markdown(f"**Description:** {scene.get('description', 'No description')}")
+            
+            if scene.get('characters_present'):
+                st.markdown(f"**Characters Present:** {', '.join(scene['characters_present'])}")
+            
+            if scene.get('enemies'):
+                st.markdown("**Enemies:**")
+                for enemy in scene['enemies']:
+                    st.markdown(f"• {enemy['name']} (HP: {enemy['hp']}, AC: {enemy['ac']})")
+            
+            if scene.get('npcs'):
+                st.markdown("**NPCs:**")
+                for npc in scene['npcs']:
+                    st.markdown(f"• {npc['name']} - {npc['role']}")
+            
+            if scene.get('rewards'):
+                st.markdown("**Rewards:**")
+                for reward in scene['rewards']:
+                    st.markdown(f"• {reward}")
 
 if __name__ == "__main__":
     main()
