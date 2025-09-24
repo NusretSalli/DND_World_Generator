@@ -50,26 +50,28 @@ DEFAULT_STORY_LENGTH = "medium"  # "short", "medium", "long"
 ENABLE_CHARACTER_CONTEXT = True
 DEFAULT_ENVIRONMENT = "any"
 
-# UI Behavior
-AUTO_REFRESH_INTERVAL = 5  # seconds
-SHOW_SUCCESS_MESSAGES = True
-SHOW_ERROR_DETAILS = True
-ENABLE_TOOLTIPS = True
+# Performance Configuration
+ENABLE_CACHING = True
+CACHE_TTL_SHORT = 10   # seconds - for frequently changing data
+CACHE_TTL_MEDIUM = 30  # seconds - for character data
+CACHE_TTL_LONG = 300   # seconds - for static data
 
-# Development Settings
-DEBUG_MODE = False
-SHOW_API_RESPONSES = False
-LOG_DICE_ROLLS = False
+# Reduce heavy visualizations for better performance
+ENABLE_HEALTH_CHARTS = True
+ENABLE_SPATIAL_COMBAT_VISUAL = False  # Can be enabled per-session
+CHART_ANIMATION = False  # Disable animations for faster rendering
+CHART_HEIGHT = 400  # Reduced from default
 
-# Desktop App Settings (for PyInstaller)
-DESKTOP_APP_NAME = "DND_World_Generator"
-DESKTOP_APP_VERSION = "1.0.0"
-DESKTOP_APP_DESCRIPTION = "D&D Campaign Management System"
+# API Timeout Settings (reduced for faster failure detection)
+API_TIMEOUT_SHORT = 2   # For quick operations (was 3)
+API_TIMEOUT_MEDIUM = 3  # For normal operations (was 5)
+API_TIMEOUT_LONG = 8    # For complex operations (was 15)
 
-# API Timeout Settings (seconds)
-API_TIMEOUT_SHORT = 3   # For quick operations
-API_TIMEOUT_MEDIUM = 5  # For normal operations
-API_TIMEOUT_LONG = 15   # For complex operations like story generation
+# UI Performance Settings
+AUTO_REFRESH_INTERVAL = 30  # Increased from 5 seconds
+SHOW_LOADING_SPINNERS = True
+LAZY_LOAD_CHARTS = True
+MINIMIZE_REDRAWS = True
 
 # Cache Settings
 CACHE_CHARACTER_DATA = True

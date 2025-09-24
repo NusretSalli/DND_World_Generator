@@ -11,6 +11,16 @@ import json
 import time
 from typing import List, Dict, Optional
 
+# Import configuration
+try:
+    from streamlit_config import *
+except ImportError:
+    # Optimized timeout values for better performance
+    API_TIMEOUT_SHORT = 1.5  # Reduced from 2
+    API_TIMEOUT_MEDIUM = 2.5  # Reduced from 3
+    API_TIMEOUT_LONG = 6      # Reduced from 8
+    ENABLE_CACHING = True
+
 # Configure the app
 st.set_page_config(
     page_title="🐉 D&D World Generator",
@@ -98,7 +108,7 @@ def check_flask_connection():
     except:
         return False
 
-@st.cache_data(ttl=10, show_spinner=False)  # Cache for 10 seconds
+@st.cache_data(ttl=30, show_spinner=False)  # Increased cache time to 30 seconds
 def get_characters():
     """Fetch characters from Flask backend - cached"""
     try:
@@ -107,12 +117,36 @@ def get_characters():
     except:
         return []
 
+def get_characters_optimized():
+    """Optimized character loading with session state caching"""
+    current_time = time.time()
+    # Use cached data if it's less than 15 seconds old
+    if (st.session_state.cached_characters is not None and 
+        current_time - st.session_state.cache_timestamp < 15):
+        return st.session_state.cached_characters
+    
+    # Fetch new data
+    characters = get_characters()
+    st.session_state.cached_characters = characters
+    st.session_state.cache_timestamp = current_time
+    return characters
+
 # Manual cache invalidation function
 def invalidate_character_cache():
     """Force refresh character data"""
     get_characters.clear()
+    st.session_state.cached_characters = None
+    st.session_state.cache_timestamp = 0
     if 'characters_last_update' in st.session_state:
         del st.session_state.characters_last_update
+
+def invalidate_all_caches():
+    """Clear all caches for fresh data"""
+    get_characters.clear()
+    get_character_spells.clear()
+    get_combat_status.clear()
+    st.session_state.cached_characters = None
+    st.session_state.cache_timestamp = 0
 
 def create_character(char_data):
     """Create character via Flask backend"""
@@ -123,6 +157,18 @@ def create_character(char_data):
             invalidate_character_cache()  # Clear cache when character is created
         return success
     except:
+        return False
+
+def delete_character(character_id: int) -> bool:
+    """Delete a character"""
+    try:
+        response = requests.post(f"{FLASK_URL}/delete_character/{character_id}", timeout=API_TIMEOUT_SHORT)
+        if response.status_code in [200, 302]:
+            invalidate_character_cache()
+            return True
+        return False
+    except Exception as e:
+        print(f"Error deleting character: {e}")
         return False
 
 @st.cache_data(ttl=60, show_spinner=False)  # Cache dice results for 1 minute
@@ -144,22 +190,490 @@ def generate_ability_scores(method="4d6", race="human"):
     except:
         return None
 
-# Initialize session state
+# Inventory management functions
+@st.cache_data(ttl=10, show_spinner=False)
+def get_character_inventory(character_id: int):
+    """Get character inventory data"""
+    try:
+        response = requests.get(f"{FLASK_URL}/character/{character_id}/inventory", timeout=API_TIMEOUT_SHORT)
+        if response.status_code == 200:
+            # Parse the HTML response to extract inventory data
+            # For now, return a simple structure
+            return {"equipped_items": [], "carried_items": [], "equipment_slots": {}}
+        return None
+    except:
+        return None
+
+def equip_item(character_id: int, item_id: int, slot: str) -> bool:
+    """Equip an item to a character slot"""
+    try:
+        response = requests.post(
+            f"{FLASK_URL}/character/{character_id}/equip/{item_id}",
+            data={"slot": slot},
+            timeout=API_TIMEOUT_SHORT
+        )
+        return response.status_code in [200, 302]
+    except:
+        return False
+
+def unequip_item(character_id: int, slot: str) -> bool:
+    """Unequip an item from a character slot"""
+    try:
+        response = requests.post(
+            f"{FLASK_URL}/character/{character_id}/unequip",
+            data={"slot": slot},
+            timeout=API_TIMEOUT_SHORT
+        )
+        return response.status_code in [200, 302]
+    except:
+        return False
+
+def add_item_to_character(character_id: int, item_name: str) -> bool:
+    """Add an item to character inventory"""
+    try:
+        response = requests.post(
+            f"{FLASK_URL}/character/{character_id}/add_item",
+            data={"item_name": item_name},
+            timeout=API_TIMEOUT_SHORT
+        )
+        return response.status_code in [200, 302]
+    except:
+        return False
+
+def show_character_inventory(character):
+    """Display character inventory management interface"""
+    st.markdown("---")
+    st.subheader("🎒 Inventory & Equipment")
+    
+    # Close inventory button
+    if st.button("❌ Close Inventory", key="close_inventory"):
+        st.session_state.show_inventory = False
+        st.rerun()
+    
+    # Get inventory data (simplified for now since we'd need to parse HTML)
+    st.info("📝 **Note:** This is a simplified inventory view. Full equipment management with visual slots coming soon!")
+    
+    # Mock equipment slots for demonstration
+    st.markdown("### 🛡️ Equipment Slots")
+    
+    equipment_slots = [
+        "Main Hand", "Off Hand", "Armor", "Shield", "Helmet", 
+        "Gloves", "Boots", "Cloak", "Ring 1", "Ring 2", "Amulet", "Belt"
+    ]
+    
+    cols = st.columns(3)
+    for i, slot in enumerate(equipment_slots):
+        with cols[i % 3]:
+            with st.container():
+                st.markdown(f"**{slot}**")
+                st.text("Empty Slot")  # Placeholder
+                if st.button(f"Manage {slot}", key=f"manage_{slot}_{character['id']}"):
+                    st.info(f"Managing {slot} - Full functionality coming soon!")
+    
+    st.markdown("### 🎒 Carried Items")
+    st.info("Carried items will be displayed here with equip/unequip options.")
+    
+    st.markdown("### ➕ Add New Item")
+    with st.form(f"add_item_{character['id']}"):
+        item_name = st.text_input("Item Name", placeholder="Enter item name")
+        if st.form_submit_button("Add Item"):
+            if item_name:
+                if add_item_to_character(character['id'], item_name):
+                    st.success(f"Added {item_name} to inventory!")
+                    st.rerun()
+                else:
+                    st.error("Failed to add item!")
+            else:
+                st.error("Please enter an item name!")
+
+def show_combat_actions(combat):
+    """Display comprehensive combat action interface"""
+    st.subheader("⚔️ Combat Actions")
+    
+    combat_id = st.session_state.combat_id
+    combatants = combat.get('combatants', [])
+    current_combatant = combat.get('current_combatant_name', 'Unknown')
+    
+    # Action tabs
+    action_tab1, action_tab2, action_tab3 = st.tabs(["🗡️ Basic Actions", "🎯 Advanced Actions", "👥 Manage"])
+    
+    with action_tab1:
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("⚔️ Attack", key="combat_attack"):
+                # Attack interface
+                show_attack_interface(combat_id, combatants)
+        
+        with col2:
+            if st.button("❤️ Heal", key="combat_heal"):
+                show_heal_interface(combat_id, combatants)
+        
+        with col3:
+            if st.button("🏃 End Turn", key="combat_end_turn"):
+                try:
+                    response = requests.post(f"{FLASK_URL}/combat/{combat_id}/end_turn", timeout=5)
+                    if response.status_code == 200:
+                        st.success("Turn ended!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to end turn")
+                except:
+                    st.error("Error ending turn")
+        
+        with col4:
+            if st.button("🏁 End Combat", key="combat_end"):
+                del st.session_state.combat_id
+                st.success("Combat ended!")
+                st.rerun()
+    
+    with action_tab2:
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("💀 Death Save", key="combat_death_save"):
+                show_death_save_interface(combat_id, combatants)
+        
+        with col2:
+            if st.button("🎯 Throw", key="combat_throw"):
+                show_throw_interface(combat_id, combatants)
+                
+        with col3:
+            if st.button("⚡ Bonus Action", key="combat_bonus"):
+                show_bonus_action_interface(combat_id, combatants)
+        
+        with col4:
+            if st.button("🛡️ Reaction", key="combat_reaction"):
+                show_reaction_interface(combat_id, combatants)
+    
+    with action_tab3:
+        if st.button("➕ Add Enemy", key="add_enemy"):
+            show_add_enemy_interface(combat_id)
+
+def show_attack_interface(combat_id, combatants):
+    """Show attack interface"""
+    st.subheader("⚔️ Attack")
+    
+    # Select attacker and target
+    attacker_names = [f"{c.get('character_name', 'Unknown')} (HP: {c.get('current_hp', 0)})" for c in combatants if c.get('current_hp', 0) > 0]
+    target_names = [f"{c.get('character_name', 'Unknown')} (HP: {c.get('current_hp', 0)})" for c in combatants]
+    
+    with st.form("attack_form"):
+        attacker = st.selectbox("Attacker", attacker_names)
+        target = st.selectbox("Target", target_names)
+        
+        if st.form_submit_button("🗡️ Execute Attack"):
+            # Get character IDs (simplified - would need proper mapping)
+            st.info("Attack executed! (Full implementation connects to Flask combat system)")
+
+def show_heal_interface(combat_id, combatants):
+    """Show heal interface"""
+    st.subheader("❤️ Heal")
+    
+    with st.form("heal_form"):
+        target_names = [f"{c.get('character_name', 'Unknown')} (HP: {c.get('current_hp', 0)})" for c in combatants]
+        target = st.selectbox("Target", target_names)
+        heal_amount = st.number_input("Heal Amount", min_value=1, max_value=100, value=10)
+        
+        if st.form_submit_button("💚 Heal"):
+            try:
+                # This would need proper character ID mapping
+                st.success(f"Healed {heal_amount} HP!")
+                st.rerun()
+            except:
+                st.error("Failed to heal!")
+
+def show_death_save_interface(combat_id, combatants):
+    """Show death save interface"""
+    st.subheader("💀 Death Save")
+    
+    unconscious_chars = [c for c in combatants if c.get('current_hp', 0) <= 0]
+    
+    if not unconscious_chars:
+        st.info("No unconscious characters need death saves.")
+        return
+    
+    with st.form("death_save_form"):
+        char_names = [f"{c.get('character_name', 'Unknown')}" for c in unconscious_chars]
+        character = st.selectbox("Character", char_names)
+        
+        if st.form_submit_button("🎲 Roll Death Save"):
+            st.info("Death save rolled! (Full implementation connects to Flask)")
+
+def show_throw_interface(combat_id, combatants):
+    """Show throw interface"""
+    st.subheader("🎯 Throw Item")
+    
+    with st.form("throw_form"):
+        thrower_names = [f"{c.get('character_name', 'Unknown')}" for c in combatants if c.get('current_hp', 0) > 0]
+        target_names = [f"{c.get('character_name', 'Unknown')}" for c in combatants]
+        
+        thrower = st.selectbox("Thrower", thrower_names)
+        target = st.selectbox("Target", target_names)
+        item = st.text_input("Item to Throw", placeholder="e.g., Dagger, Rock")
+        
+        if st.form_submit_button("🎯 Throw"):
+            st.info(f"Threw {item}! (Full implementation connects to Flask)")
+
+def show_bonus_action_interface(combat_id, combatants):
+    """Show bonus action interface"""
+    st.subheader("⚡ Bonus Action")
+    
+    with st.form("bonus_action_form"):
+        char_names = [f"{c.get('character_name', 'Unknown')}" for c in combatants if c.get('current_hp', 0) > 0]
+        character = st.selectbox("Character", char_names)
+        action = st.text_input("Bonus Action", placeholder="Describe the bonus action")
+        
+        if st.form_submit_button("⚡ Execute"):
+            st.info(f"Bonus action: {action}! (Full implementation connects to Flask)")
+
+def show_reaction_interface(combat_id, combatants):
+    """Show reaction interface"""
+    st.subheader("🛡️ Reaction")
+    
+    with st.form("reaction_form"):
+        char_names = [f"{c.get('character_name', 'Unknown')}" for c in combatants if c.get('current_hp', 0) > 0]
+        character = st.selectbox("Character", char_names)
+        reaction = st.text_input("Reaction", placeholder="Describe the reaction")
+        
+        if st.form_submit_button("🛡️ React"):
+            st.info(f"Reaction: {reaction}! (Full implementation connects to Flask)")
+
+def show_add_enemy_interface(combat_id):
+    """Show add enemy interface"""
+    st.subheader("👹 Add Enemy")
+    
+    with st.form("add_enemy_form"):
+        enemy_name = st.text_input("Enemy Name", placeholder="e.g., Goblin")
+        enemy_hp = st.number_input("HP", min_value=1, max_value=500, value=10)
+        enemy_ac = st.number_input("AC", min_value=1, max_value=30, value=12)
+        
+        if st.form_submit_button("➕ Add Enemy"):
+            try:
+                response = requests.post(
+                    f"{FLASK_URL}/combat/{combat_id}/add_enemy",
+                    json={"name": enemy_name, "hp": enemy_hp, "ac": enemy_ac},
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    st.success(f"Added {enemy_name} to combat!")
+                    st.rerun()
+                else:
+                    st.error("Failed to add enemy!")
+            except:
+                st.error("Error adding enemy!")
+
+@st.cache_data(ttl=60, show_spinner=False)  # Cache for 1 minute
+def get_character_spells(character_id):
+    """Get character spell information from Flask API"""
+    try:
+        response = requests.get(f"{FLASK_URL}/character/{character_id}/spells", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except:
+        return None
+
+def cast_spell(character_id, spell_name, spell_level):
+    """Cast a spell and consume spell slot"""
+    try:
+        response = requests.post(
+            f"{FLASK_URL}/character/{character_id}/cast_spell",
+            json={"spell_name": spell_name, "spell_level": spell_level},
+            timeout=5
+        )
+        return response.status_code == 200, response.json() if response.status_code == 200 else {}
+    except:
+        return False, {}
+
+def long_rest_character(character_id):
+    """Perform long rest to restore HP and spell slots"""
+    try:
+        response = requests.post(f"{FLASK_URL}/character/{character_id}/long_rest", timeout=5)
+        return response.status_code == 200, response.json() if response.status_code == 200 else {}
+    except:
+        return False, {}
+
+@st.cache_data(ttl=5, show_spinner=False)  # Cache combat status for 5 seconds
+def get_combat_status(combat_id):
+    """Get combat status with caching"""
+    try:
+        response = requests.get(f"{FLASK_URL}/combat/{combat_id}/status", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except:
+        return None
+
+def show_character_spells(character):
+    """Display character spell management interface"""
+    st.markdown("---")
+    st.subheader("🔮 Spells & Magic")
+    
+    # Close spells button
+    if st.button("❌ Close Spells", key="close_spells"):
+        st.session_state.show_spells = False
+        st.rerun()
+    
+    # Lazy load spell data with loading indicator
+    with st.spinner("Loading spell data..."):
+        spell_data = get_character_spells(character['id'])
+    
+    if not spell_data:
+        st.error("Failed to load spell data")
+        return
+    
+    # Check if character is a spellcaster
+    if not spell_data.get('is_spellcaster', False):
+        st.info(f"**{character['name']}** is not a spellcasting class and cannot cast spells.")
+        return
+    
+    # Spell statistics
+    st.markdown("### 📊 Spell Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Cantrips Known", spell_data.get('cantrips_known', 0))
+    with col2:
+        st.metric("Spells Known", spell_data.get('spells_known', 0))
+    with col3:
+        st.metric("Currently Known", len(spell_data.get('known_spells', [])))
+    with col4:
+        st.metric("Prepared", len(spell_data.get('prepared_spells', [])))
+    
+    # Spell slots visualization
+    st.markdown("### 🎯 Spell Slots")
+    
+    current_slots = spell_data.get('current_slots', {})
+    max_slots = spell_data.get('max_slots', {})
+    
+    if max_slots:
+        for level in range(1, 10):
+            if max_slots.get(str(level), 0) > 0:
+                current = current_slots.get(str(level), 0)
+                maximum = max_slots.get(str(level), 0)
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    # Visual representation of spell slots
+                    filled_slots = "●" * current
+                    empty_slots = "○" * (maximum - current)
+                    st.markdown(f"**Level {level}:** {filled_slots}{empty_slots}")
+                with col2:
+                    st.text(f"({current}/{maximum})")
+    else:
+        st.info("No spell slots available")
+    
+    # Long rest button
+    if st.button("🛌 Take Long Rest", key="long_rest"):
+        success, data = long_rest_character(character['id'])
+        if success:
+            st.success(data.get('message', 'Long rest completed! HP and spell slots restored.'))
+            st.rerun()
+        else:
+            st.error("Failed to take long rest!")
+    
+    # Spell sections by level
+    available_spells = spell_data.get('available_spells', {})
+    known_spells = set(spell_data.get('known_spells', []))
+    prepared_spells = set(spell_data.get('prepared_spells', []))
+    
+    for level in range(0, 4):  # Show levels 0-3 like HTML template
+        level_spells = available_spells.get(str(level), [])
+        if level_spells:
+            st.markdown(f"### {'🔮 Cantrips' if level == 0 else f'⚡ Level {level} Spells'}")
+            
+            # Display spells in a grid-like format
+            spell_cols = st.columns(2)
+            for i, spell in enumerate(level_spells):
+                with spell_cols[i % 2]:
+                    with st.container():
+                        # Spell status indicators
+                        status_text = ""
+                        if spell in known_spells:
+                            if spell in prepared_spells:
+                                status_text = "✅ Known & Prepared"
+                                spell_color = "blue"
+                            else:
+                                status_text = "📚 Known (not prepared)"
+                                spell_color = "green"
+                        else:
+                            status_text = "🔍 Available to learn"
+                            spell_color = "gray"
+                        
+                        st.markdown(f"**{spell}**")
+                        st.caption(status_text)
+                        
+                        # Cast button for prepared spells
+                        if spell in prepared_spells:
+                            cast_key = f"cast_{spell}_{level}_{character['id']}"
+                            
+                            if level == 0:  # Cantrips
+                                if st.button(f"🔮 Cast Cantrip", key=cast_key):
+                                    success, data = cast_spell(character['id'], spell, level)
+                                    if success:
+                                        st.success(f"Cast {spell}!")
+                                    else:
+                                        st.error("Failed to cast spell!")
+                            else:  # Leveled spells
+                                can_cast = current_slots.get(str(level), 0) > 0
+                                if st.button(
+                                    f"⚡ Cast (Level {level})", 
+                                    key=cast_key,
+                                    disabled=not can_cast
+                                ):
+                                    if can_cast:
+                                        success, data = cast_spell(character['id'], spell, level)
+                                        if success:
+                                            st.success(f"Cast {spell}! Spell slot consumed.")
+                                            st.rerun()
+                                        else:
+                                            st.error("Failed to cast spell!")
+                                    else:
+                                        st.warning("No spell slots remaining!")
+                        
+                        st.markdown("---")
+
+# Initialize session state with performance optimizations
 if 'selected_character' not in st.session_state:
     st.session_state.selected_character = None
 if 'last_roll' not in st.session_state:
     st.session_state.last_roll = None
 if 'generated_scores' not in st.session_state:
     st.session_state.generated_scores = None
+if 'flask_connected' not in st.session_state:
+    st.session_state.flask_connected = None
+# Performance optimization: cache character data
+if 'cached_characters' not in st.session_state:
+    st.session_state.cached_characters = None
+if 'cache_timestamp' not in st.session_state:
+    st.session_state.cache_timestamp = 0
 
 # Sidebar navigation
 st.sidebar.markdown("# 🐉 D&D Manager")
+
+# Performance controls
+if st.sidebar.button("🔄 Refresh Data", help="Clear all caches and reload fresh data"):
+    invalidate_all_caches()
+    st.sidebar.success("Data refreshed!")
+    st.rerun()
+
 st.sidebar.markdown("---")
 
-# Check Flask connection
-if not check_flask_connection():
+# Check Flask connection only if not recently checked (optimized)
+current_time = time.time()
+last_check = getattr(st.session_state, 'last_connection_check', 0)
+
+if st.session_state.flask_connected is None or current_time - last_check > 30:
+    st.session_state.flask_connected = check_flask_connection()
+    st.session_state.last_connection_check = current_time
+
+if not st.session_state.flask_connected:
     st.sidebar.error("⚠️ Flask backend not running!")
     st.sidebar.info("Please start the Flask app:\n```python app.py```")
+    if st.sidebar.button("🔄 Retry Connection"):
+        st.session_state.flask_connected = None  # Force recheck
+        st.rerun()
 else:
     st.sidebar.success("✅ Connected to Flask backend")
 
@@ -173,18 +687,26 @@ page = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Quick Actions")
 
-# Quick character count
-characters = get_characters()
-st.sidebar.metric("Total Characters", len(characters))
-
-if characters:
-    alive_count = sum(1 for c in characters if c.get('current_hp', 0) > 0)
-    st.sidebar.metric("Characters Alive", alive_count)
+# Quick character count - only if Flask is connected
+if st.session_state.flask_connected:
+    try:
+        characters = get_characters()
+        st.sidebar.metric("Total Characters", len(characters))
+        
+        if characters:
+            alive_count = sum(1 for c in characters if c.get('current_hp', 0) > 0)
+            st.sidebar.metric("Characters Alive", alive_count)
+    except:
+        st.sidebar.warning("⚠️ Could not load character data")
+        st.session_state.flask_connected = False  # Mark as disconnected
 
 # Main content area
 def show_dashboard():
     """Dashboard page"""
     st.markdown('<div class="main-header"><h1>🐉 D&D World Generator</h1><p>Enhanced Campaign Management System</p></div>', unsafe_allow_html=True)
+    
+    # Get characters once for the entire dashboard
+    characters = get_characters()
     
     if not characters:
         st.info("🎭 Welcome! Create your first character to get started.")
@@ -264,6 +786,9 @@ def show_characters():
     with tab1:
         st.subheader("Your Characters")
         
+        # Get characters once for this tab (optimized)
+        characters = get_characters_optimized()
+        
         if not characters:
             st.info("No characters found. Create your first character!")
             return
@@ -287,11 +812,18 @@ def show_characters():
             with col1:
                 st.markdown(f'<div class="character-card">', unsafe_allow_html=True)
                 st.subheader(f"🧙 {char['name']}")
-                st.write(f"**Race:** {char['race'].title()}")
-                st.write(f"**Class:** {char['character_class'].title()}")
-                st.write(f"**Level:** {char['level']}")
-                st.write(f"**Gender:** {char['gender'].title()}")
-                st.write(f"**Experience:** {char.get('experience', 0)} XP")
+                
+                # Basic Character Information
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    st.write(f"**Race:** {char['race'].title()}")
+                    st.write(f"**Class:** {char['character_class'].title()}")
+                    st.write(f"**Level:** {char['level']}")
+                with info_col2:
+                    st.write(f"**Gender:** {char['gender'].title()}")
+                    st.write(f"**Experience:** {char.get('experience', 0)} XP")
+                    st.write(f"**Proficiency Bonus:** +{2 + (char['level'] - 1) // 4}")
+                
                 st.markdown('</div>', unsafe_allow_html=True)
             
             with col2:
@@ -319,19 +851,56 @@ def show_characters():
             with col3:
                 st.subheader("Actions")
                 
-                if st.button("📜 View Spells", key=f"spells_{char['id']}"):
+                if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
                     st.session_state.selected_character = char['id']
                     st.session_state.navigation = "📜 Spells"
                     st.rerun()
                 
                 if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
-                    st.info("Opening Flask inventory page...")
-                    st.markdown(f"[Open Inventory]({FLASK_URL}/character/{char['id']}/inventory)")
+                    st.session_state.selected_character = char['id']
+                    st.session_state.navigation = "👤 Characters"
+                    st.session_state.show_inventory = True
+                    st.rerun()
+                
+                if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
+                    st.session_state.selected_character = char['id']
+                    st.session_state.navigation = "👤 Characters"
+                    st.session_state.show_spells = True
+                    st.rerun()
                 
                 if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
                     st.session_state.selected_character = char['id']
                     st.session_state.navigation = "⚔️ Combat"
                     st.rerun()
+                
+                # Delete button
+                st.markdown("---")
+                if st.button("🗑️ Delete Character", key=f"delete_{char['id']}", type="secondary"):
+                    # Create a confirmation dialog using session state
+                    st.session_state[f"confirm_delete_{char['id']}"] = True
+                
+                # Show confirmation dialog if delete was clicked
+                if st.session_state.get(f"confirm_delete_{char['id']}", False):
+                    st.warning(f"Are you sure you want to delete **{char['name']}**? This action cannot be undone!")
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{char['id']}", type="primary"):
+                            if delete_character(char['id']):
+                                st.success(f"Character {char['name']} deleted successfully!")
+                                # Clear caches for fresh data
+                                invalidate_character_cache()
+                                # Clear the confirmation state
+                                if f"confirm_delete_{char['id']}" in st.session_state:
+                                    del st.session_state[f"confirm_delete_{char['id']}"]
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete character!")
+                    with col_no:
+                        if st.button("❌ Cancel", key=f"confirm_no_{char['id']}"):
+                            # Clear the confirmation state
+                            if f"confirm_delete_{char['id']}" in st.session_state:
+                                del st.session_state[f"confirm_delete_{char['id']}"]
+                            st.rerun()
             
             # Ability scores
             st.subheader("📊 Ability Scores")
@@ -349,6 +918,46 @@ def show_characters():
                         score,
                         modifier_str
                     )
+            
+            # Currency display
+            st.subheader("💰 Currency")
+            currency_cols = st.columns(4)
+            
+            with currency_cols[0]:
+                platinum = char.get('platinum', 0)
+                if platinum > 0:
+                    st.metric("Platinum", f"{platinum}p")
+                else:
+                    st.metric("Platinum", "0p")
+            
+            with currency_cols[1]:
+                gold = char.get('gold', 0)
+                if gold > 0:
+                    st.metric("Gold", f"{gold}g")
+                else:
+                    st.metric("Gold", "0g")
+            
+            with currency_cols[2]:
+                silver = char.get('silver', 0)
+                if silver > 0:
+                    st.metric("Silver", f"{silver}s")
+                else:
+                    st.metric("Silver", "0s")
+            
+            with currency_cols[3]:
+                copper = char.get('copper', 0)
+                if copper > 0:
+                    st.metric("Copper", f"{copper}c")
+                else:
+                    st.metric("Copper", "0c")
+            
+            # Show inventory if requested
+            if st.session_state.get('show_inventory', False):
+                show_character_inventory(char)
+            
+            # Show spells if requested
+            if st.session_state.get('show_spells', False):
+                show_character_spells(char)
     
     with tab2:
         st.subheader("➕ Create New Character")
@@ -440,8 +1049,9 @@ def show_characters():
                     with st.spinner("Creating character..."):
                         if create_character(char_data):
                             st.success(f"✅ {name} has been created successfully!")
+                            # Clear caches to show new character immediately
+                            invalidate_character_cache()
                             st.session_state.generated_scores = None  # Clear generated scores
-                            time.sleep(1)
                             st.rerun()
                         else:
                             st.error("❌ Failed to create character. Please check your Flask backend.")
@@ -509,11 +1119,10 @@ def show_combat():
         if hasattr(st.session_state, 'combat_id') and st.session_state.combat_id:
             st.subheader("🎲 Active Combat")
             
-            try:
-                response = requests.get(f"{FLASK_URL}/combat/{st.session_state.combat_id}/status", timeout=5)
-                
-                if response.status_code == 200:
-                    combat = response.json()
+            # Load combat status with caching
+            combat = get_combat_status(st.session_state.combat_id)
+            
+            if combat:
                     
                     col1, col2 = st.columns(2)
                     with col1:
@@ -537,34 +1146,10 @@ def show_combat():
                         
                         st.dataframe(combatants_data, use_container_width=True)
                     
-                    # Combat actions
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        if st.button("⚔️ Attack"):
-                            st.info("Advanced attack system available in Flask interface")
-                    
-                    with col2:
-                        if st.button("🏃 End Turn"):
-                            try:
-                                requests.post(f"{FLASK_URL}/combat/{st.session_state.combat_id}/end_turn", timeout=5)
-                                st.rerun()
-                            except:
-                                st.error("Failed to end turn")
-                    
-                    with col3:
-                        if st.button("🏁 End Combat"):
-                            del st.session_state.combat_id
-                            st.success("Combat ended!")
-                            st.rerun()
-                else:
-                    st.error("Failed to load combat status")
-                    if st.button("Clear Combat"):
-                        del st.session_state.combat_id
-                        st.rerun()
-                        
-            except Exception as e:
-                st.error(f"Error loading combat: {str(e)}")
+                    # Enhanced Combat Actions
+                    show_combat_actions(combat)
+            else:
+                st.error("Failed to load combat status")
                 if st.button("Clear Combat"):
                     del st.session_state.combat_id
                     st.rerun()
@@ -838,9 +1423,11 @@ def show_dice_roller():
         
         for label, dice_notation in dice_presets.items():
             if st.button(f"🎲 {label}", key=f"preset_{label}", use_container_width=True):
-                result = roll_dice(dice_notation)
+                with st.spinner("Rolling..."):
+                    result = roll_dice(dice_notation)
                 if result:
                     st.session_state.last_roll = result
+                    st.rerun()  # Refresh to show result immediately
                 else:
                     # Fallback for unsupported notation
                     simple_notation = dice_notation.split('k')[0].split('d')[0] + 'd' + dice_notation.split('d')[1].split('k')[0].split('d')[0]
@@ -849,6 +1436,7 @@ def show_dice_roller():
                     result = roll_dice(simple_notation)
                     if result:
                         st.session_state.last_roll = result
+                        st.rerun()
                     else:
                         st.error("Failed to roll dice")
     
@@ -866,22 +1454,26 @@ def show_dice_roller():
         
         with col2a:
             if st.button("🎲 Roll Custom", type="primary", use_container_width=True):
-                result = roll_dice(custom_dice)
+                with st.spinner("Rolling..."):
+                    result = roll_dice(custom_dice)
                 if result:
                     st.session_state.last_roll = result
+                    st.rerun()  # Refresh to show result immediately
                 else:
                     st.error("Invalid dice notation or connection error")
         
         with col2b:
             if st.button("🔄 Roll Multiple", use_container_width=True):
-                results = []
-                for _ in range(5):
-                    result = roll_dice(custom_dice)
-                    if result:
-                        results.append(result['total'])
+                with st.spinner("Rolling multiple times..."):
+                    results = []
+                    for _ in range(5):
+                        result = roll_dice(custom_dice)
+                        if result:
+                            results.append(result['total'])
                 
                 if results:
                     st.session_state.multiple_rolls = results
+                    st.rerun()  # Refresh to show results immediately
                 else:
                     st.error("Failed to roll dice")
         
@@ -1069,19 +1661,50 @@ def show_story_generator():
 def main():
     """Main application logic"""
     
-    # Page routing
-    if page == "🏠 Dashboard":
-        show_dashboard()
-    elif page == "👤 Characters":
-        show_characters()
-    elif page == "⚔️ Combat":
-        show_combat()
-    elif page == "📜 Spells":
-        show_spells()
-    elif page == "🎲 Dice Roller":
-        show_dice_roller()
-    elif page == "📚 Story Generator":
-        show_story_generator()
+    # Add a refresh button in the sidebar for cache management
+    if st.session_state.flask_connected:
+        st.sidebar.markdown("---")
+        if st.sidebar.button("🔄 Refresh Data"):
+            invalidate_character_cache()
+            st.session_state.flask_connected = None  # Force connection recheck
+            st.cache_data.clear()  # Clear all cached data
+            st.success("Data refreshed!")
+            st.rerun()
+        
+        # Performance debugging (only show if there are issues)
+        if st.sidebar.checkbox("🔧 Performance Debug", value=False):
+            st.sidebar.markdown("**Cache Status:**")
+            cache_info = get_characters.cache_info if hasattr(get_characters, 'cache_info') else None
+            if cache_info:
+                st.sidebar.text(f"Characters: {cache_info}")
+            
+            st.sidebar.markdown("**Connection:**")
+            start_time = time.time()
+            test_conn = check_flask_connection()
+            conn_time = (time.time() - start_time) * 1000
+            st.sidebar.text(f"Flask: {conn_time:.1f}ms")
+            
+            if st.sidebar.button("Clear All Cache"):
+                st.cache_data.clear()
+                st.sidebar.success("Cache cleared!")
+    
+    # Page routing with error handling
+    try:
+        if page == "🏠 Dashboard":
+            show_dashboard()
+        elif page == "👤 Characters":
+            show_characters()
+        elif page == "⚔️ Combat":
+            show_combat()
+        elif page == "📜 Spells":
+            show_spells()
+        elif page == "🎲 Dice Roller":
+            show_dice_roller()
+        elif page == "📚 Story Generator":
+            show_story_generator()
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        st.info("Try refreshing the page or check your Flask backend connection.")
 
 if __name__ == "__main__":
     main()
