@@ -2,19 +2,21 @@
 Main Flask Application - API Only
 """
 
+import os
 from flask import Flask, jsonify
-# Removed CORS import for now since it's not installed
+from .config import config
 from .utils.database import DatabaseManager
 from .api.character_routes import character_bp
 from .api.story_routes import story_bp  
 from .api.combat_routes import combat_bp
 
-def create_app():
+def create_app(config_name=None):
     """Create and configure the Flask application."""
-    app = Flask(__name__)
+    if config_name is None:
+        config_name = os.environ.get('FLASK_ENV', 'default')
     
-    # Enable CORS for Streamlit frontend (would need flask-cors package)
-    # CORS(app)
+    app = Flask(__name__)
+    app.config.from_object(config[config_name])
     
     # Initialize database
     DatabaseManager.init_app(app)
@@ -87,12 +89,13 @@ def setup_database(app):
                 actions=json.dumps([{
                     'name': action.name,
                     'description': action.description,
-                    'damage': action.damage,
-                    'attack_bonus': action.attack_bonus
+                    'damage_dice': getattr(action, 'damage_dice', ''),
+                    'damage_type': getattr(action, 'damage_type', ''),
+                    'attack_bonus': getattr(action, 'attack_bonus', 0)
                 } for action in enemy_data.actions]),
                 special_abilities=json.dumps([{
-                    'name': ability.name,
-                    'description': ability.description
+                    'name': ability.name if hasattr(ability, 'name') else str(ability),
+                    'description': ability.description if hasattr(ability, 'description') else str(ability)
                 } for ability in enemy_data.special_abilities])
             )
             
@@ -104,6 +107,10 @@ def setup_database(app):
         print("Standard enemies populated successfully!")
 
 if __name__ == '__main__':
-    app = create_app()
+    app = create_app('development')
     setup_database(app)
-    app.run(debug=True, port=5000)
+    app.run(
+        debug=app.config['DEBUG'],
+        host=app.config['API_HOST'],
+        port=app.config['API_PORT']
+    )

@@ -1,53 +1,52 @@
-# **D&D World Generator**
+# 🐉 D&D World Generator v2.0
 
-A web-based Dungeons & Dragons character creation and management system. This application allows users to create, view, and manage D&D characters with features like random name generation based on race and gender.
+A modernized, modular Dungeons & Dragons character creation and campaign management system with a clean API backend and Streamlit frontend.
 
-## **Features**
+## ✨ Features
 
-- Character creation with:
-  - Race selection (Human, Elf, Dwarf, etc.)
-  - Class selection (Barbarian, Bard, Cleric, etc.)
-  - Gender selection
-  - Ability scores (Strength, Dexterity, Constitution, etc.)
-  - Random name generation based on race and gender
-- Character management:
-  - View all created characters
-  - Delete characters
-  - Persistent storage using SQLite database
+- **Character Management**: Create, manage, and level up D&D 5e characters
+- **Smart Inventory**: Comprehensive item and equipment management system  
+- **AI Story Generation**: LLM-powered story continuation and encounter generation
+- **Combat System**: Turn-based combat tracking with initiative and actions
+- **Name Generation**: Race-appropriate name generation for characters
+- **Modern Architecture**: Clean separation between API and frontend
 
-## **Project Roadmap**
+## 🏗️ Architecture
 
-```mermaid
-graph TD
-    subgraph Completed
-        A[Character Creation] --> B[Database Integration]
-        B --> C[Character Management]
-        C --> D[Name Generation]
-    end
-    
-    subgraph In Progress
-        E[User Interface Improvements]
-    end
-    
-    subgraph Planned
-        F[Multi-player Support]
-        G[Combat System]
-        H[LLM Story Narration]
-        I[Character Sheet Export]
-        J[Inventory Management]
-        K[Spell System]
-    end
-    
-    D --> E
-    E --> F
-    F --> G
-    G --> H
-    E --> I
-    I --> J
-    J --> K
+The codebase has been completely refactored into a modular structure:
+
+```
+dnd_world/
+├── models/          # Database models (Character, Item, Combat, Enemy)
+├── core/            # Business logic (CharacterCreator, EquipmentManager, StorySystem)
+├── api/             # REST API routes (Flask blueprints)
+├── utils/           # Utilities (dice rolling, database management)
+├── frontend/        # Streamlit UI components
+└── config.py        # Configuration management
 ```
 
-## **Setup and Installation**
+## 🚀 Quick Start
+
+### Option 1: Interactive Menu
+```bash
+python main.py
+```
+
+### Option 2: Direct API Server
+```bash
+python run_api.py
+```
+
+### Option 3: Individual Components
+```bash
+# Start API server
+python -m dnd_world.app
+
+# Start Streamlit frontend (in another terminal)
+streamlit run dnd_world/frontend/streamlit_app.py
+```
+
+## 📦 Installation
 
 1. **Clone the repository**:
 ```bash
@@ -55,73 +54,136 @@ git clone https://github.com/NusretSalli/DND_World_Generator.git
 cd DND_World_Generator
 ```
 
-2. **Create and activate a virtual environment**:
+2. **Create virtual environment**:
 ```bash
-# Windows
 python -m venv .venv
-.\.venv\Scripts\activate
-
-# macOS/Linux
-python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-3. **Install requirements**:
+3. **Install dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Initialize the database**:
+4. **Run the application**:
 ```bash
-python app.py
+python main.py
 ```
 
-5. **Access the application**:
-   - Navigate to `http://localhost:5000` in your web browser
+## 🔧 Configuration
 
-## **Database Management**
+Configure the application using environment variables:
 
-### Working with Migrations
-
-The project uses Flask-Migrate to handle database schema changes:
-
-1. **Creating a new migration** (after changing models):
 ```bash
-# Windows
-$env:FLASK_APP = "app.py"
-python -m flask db migrate -m "Description of changes"
+# Database
+export DATABASE_URL="sqlite:///my_dnd_world.db"
 
-# macOS/Linux
-export FLASK_APP=app.py
-python -m flask db migrate -m "Description of changes"
+# API Server
+export API_HOST="0.0.0.0"
+export API_PORT="5000"
+
+# Story Generation
+export STORY_MODEL_NAME="distilgpt2"
+export ENABLE_AI_STORY_GENERATION="true"
+
+# Environment
+export FLASK_ENV="development"  # or "production"
 ```
 
-2. **Applying migrations**:
-```bash
-python -m flask db upgrade
+## 📡 API Endpoints
+
+The Flask API provides RESTful endpoints:
+
+- `GET /api/health` - Health check
+- `GET /api/characters` - List all characters
+- `POST /api/characters` - Create new character
+- `GET /api/characters/{id}` - Get character details
+- `POST /api/story/generate` - Generate story content
+- `POST /api/combat/start` - Start combat encounter
+
+## 🎲 Core Systems
+
+### Character Creation
+```python
+from dnd_world.core.character_creation import CharacterCreator
+
+character = CharacterCreator.create_character(
+    name="Aragorn",
+    race="human", 
+    character_class="ranger",
+    gender="male"
+)
 ```
 
-3. **Resetting the database** (for major changes):
-```bash
-# Delete the database file
-rm instance/dnd_characters.db
+### Equipment Management
+```python
+from dnd_world.core.equipment_manager import EquipmentManager
 
-# Restart the application to create a fresh database
-python app.py
+# Add items to character
+EquipmentManager.add_template_item_to_character(character, "Longsword")
+EquipmentManager.equip_item_to_character(character, item_id, "main_hand")
 ```
 
-## **Tips & Tricks**
+### Story Generation
+```python
+from dnd_world.core.story_generator import StorySystem
 
-1. **Character Creation**:
-   - Ability scores follow D&D 5e rules with modifiers
-   - HP is calculated based on class hit dice and Constitution
-   - AC incorporates Dexterity modifier automatically
+story_system = StorySystem()
+story = story_system.generate_story_continuation(
+    "The party enters a dark forest...",
+    character_context="Level 3 Human Ranger"
+)
+```
 
-2. **Item Management**:
-   - Items have weight that counts toward carrying capacity
-   - Magical items can require attunement
-   - Equipment can be assigned to specific slots
+## 🧪 Development
 
-3. **Troubleshooting**:
-   - If you see errors about missing columns, run migrations
-   - For a clean start, delete the database file and restart
+### Database Management
+```bash
+# Setup fresh database
+python -c "from dnd_world.app import create_app, setup_database; app = create_app(); setup_database(app)"
+
+# For migrations (if using Flask-Migrate)
+export FLASK_APP=dnd_world.app
+flask db init
+flask db migrate -m "Initial migration"
+flask db upgrade
+```
+
+## 📈 Improvements in v2.0
+
+✅ **Modular Architecture**: Clean separation of concerns  
+✅ **API-First Design**: RESTful backend, flexible frontend  
+✅ **Better Error Handling**: Comprehensive error management  
+✅ **Configuration Management**: Environment-based config  
+✅ **Streamlined Dependencies**: Removed unnecessary packages  
+✅ **Type Safety**: Better code organization and imports  
+✅ **Extensible Design**: Easy to add new features  
+
+## 🔮 Roadmap
+
+- [ ] Add comprehensive test suite
+- [ ] Implement spell system management
+- [ ] Add multi-user support with authentication
+- [ ] Create character sheet export (PDF)
+- [ ] Add campaign management features
+- [ ] Implement real-time combat via WebSockets
+- [ ] Add character art generation integration
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+## 🙏 Acknowledgments
+
+- Built with Flask, Streamlit, and SQLAlchemy
+- Uses the `pynames` library for character name generation
+- AI story generation powered by Hugging Face Transformers
+- Inspired by D&D 5th Edition rules

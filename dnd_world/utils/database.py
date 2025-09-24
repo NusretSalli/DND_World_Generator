@@ -16,9 +16,7 @@ class DatabaseManager:
     @staticmethod
     def init_app(app: Flask):
         """Initialize database with Flask app"""
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dnd_characters.db'
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        
+        # Configuration is handled by Flask config
         db.init_app(app)
         migrate.init_app(app, db)
         

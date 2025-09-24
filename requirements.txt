@@ -1,6 +1,12 @@
-Flask
-pynames
-Flask-SQLAlchemy
-Flask-Migrate
-transformers
-torch
+# D&D World Generator - Core Requirements
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.5
+pynames==0.2.4
+
+# AI/ML for story generation (optional)
+transformers>=4.21.0
+torch>=2.0.0
+
+# For enhanced API functionality (optional)
+flask-cors>=4.0.0

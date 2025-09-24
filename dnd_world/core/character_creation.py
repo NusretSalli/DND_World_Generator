@@ -138,7 +138,7 @@ class CharacterCreator:
                 item_type='gear',
                 description=item_template.description,
                 weight=item_template.weight,
-                value=item_template.cost
+                value=getattr(item_template, 'cost', getattr(item_template, 'value', 0))
             )
         
         # Add weapons
@@ -148,10 +148,10 @@ class CharacterCreator:
                 item_type='weapon',
                 description=weapon_template.description,
                 weight=weapon_template.weight,
-                value=weapon_template.cost,
-                damage=weapon_template.damage,
-                damage_type=weapon_template.damage_type,
-                weapon_properties=weapon_template.properties
+                value=getattr(weapon_template, 'cost', getattr(weapon_template, 'value', 0)),
+                damage=getattr(weapon_template, 'damage', ''),
+                damage_type=getattr(weapon_template, 'damage_type', ''),
+                weapon_properties=getattr(weapon_template, 'properties', [])
             )
         
         # Add armor
@@ -161,9 +161,9 @@ class CharacterCreator:
                 item_type='armor',
                 description=armor_template.description,
                 weight=armor_template.weight,
-                value=armor_template.cost,
-                base_ac=armor_template.ac,
-                armor_type=armor_template.armor_type,
+                value=getattr(armor_template, 'cost', getattr(armor_template, 'value', 0)),
+                base_ac=getattr(armor_template, 'ac', 0),
+                armor_type=getattr(armor_template, 'armor_type', ''),
                 strength_req=getattr(armor_template, 'strength_req', 0),
                 stealth_disadvantage=getattr(armor_template, 'stealth_disadvantage', False)
             )
