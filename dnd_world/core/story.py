@@ -1,4 +1,4 @@
-﻿"""
+"""
 LLM Story Generation Module for D&D World Generator
 
 This module provides functionality for generating D&D stories using
@@ -8,8 +8,13 @@ fallback generator when models are not available.
 
 import re
 import random
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import torch
+
+# Disable AI model loading for now
+USE_AI_MODELS = False
+
+if USE_AI_MODELS:
+    from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+    import torch
 
 
 class RuleBasedStoryGenerator:
@@ -219,30 +224,41 @@ class StoryGenerator:
         if self._initialized:
             return
             
+        # For now, skip AI model loading and use fallback
+        if not USE_AI_MODELS:
+            print("AI models disabled. Using rule-based story generator.")
+            self._llm_available = False
+            self._initialized = True
+            return
+            
         try:
-            # Determine device
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Device set to use {device}")
-            
-            print(f"Loading {self.model_name} model...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
-            
-            # Add padding token if it doesn't exist
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-            
-            # Create text generation pipeline with explicit device setting
-            self.generator = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                device=0 if device == "cuda" else -1,
-                return_full_text=False
-            )
-            
-            self._llm_available = True
-            print(f"Model {self.model_name} loaded successfully!")
+            # This would normally load AI models
+            if USE_AI_MODELS:
+                # Determine device
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                print(f"Device set to use {device}")
+                
+                print(f"Loading {self.model_name} model...")
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+                
+                # Add padding token if it doesn't exist
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                
+                # Create text generation pipeline with explicit device setting
+                self.generator = pipeline(
+                    "text-generation",
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    device=0 if device == "cuda" else -1,
+                    return_full_text=False
+                )
+                
+                self._llm_available = True
+                print(f"Model {self.model_name} loaded successfully!")
+            else:
+                self._llm_available = False
             
         except Exception as e:
             print(f"LLM model not available ({e}). Using rule-based story generator as fallback.")
