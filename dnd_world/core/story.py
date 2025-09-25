@@ -8,8 +8,13 @@ fallback generator when models are not available.
 
 import re
 import random
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import torch
+
+# Disable AI model loading for now
+USE_AI_MODELS = False
+
+if USE_AI_MODELS:
+    from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+    import torch
 
 
 class RuleBasedStoryGenerator:
@@ -97,7 +102,7 @@ class RuleBasedStoryGenerator:
         
         # Import here to avoid circular imports
         try:
-            from enemies import get_random_enemy_for_level, STANDARD_ENEMIES
+            from dnd_world.core.enemies import get_random_enemy_for_level, STANDARD_ENEMIES
             enemies_available = True
         except ImportError:
             enemies_available = False
@@ -219,33 +224,97 @@ class StoryGenerator:
         if self._initialized:
             return
             
+        # For now, skip AI model loading and use fallback
+        if not USE_AI_MODELS:
+            print("AI models disabled. Using rule-based story generator.")
+            self._llm_available = False
+            self._initialized = True
+            return
+            
         try:
-            print(f"Loading {self.model_name} model...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
-            
-            # Add padding token if it doesn't exist
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-            
-            # Create text generation pipeline
-            self.generator = pipeline(
-                "text-generation",
-                model=self.model,
-                tokenizer=self.tokenizer,
-                device=0 if torch.cuda.is_available() else -1,
-                return_full_text=False
-            )
-            
-            self._llm_available = True
-            print(f"Model {self.model_name} loaded successfully!")
+            # This would normally load AI models
+            if USE_AI_MODELS:
+                # Determine device
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                print(f"Device set to use {device}")
+                
+                print(f"Loading {self.model_name} model...")
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
+                
+                # Add padding token if it doesn't exist
+                if self.tokenizer.pad_token is None:
+                    self.tokenizer.pad_token = self.tokenizer.eos_token
+                
+                # Create text generation pipeline with explicit device setting
+                self.generator = pipeline(
+                    "text-generation",
+                    model=self.model,
+                    tokenizer=self.tokenizer,
+                    device=0 if device == "cuda" else -1,
+                    return_full_text=False
+                )
+                
+                self._llm_available = True
+                print(f"Model {self.model_name} loaded successfully!")
+            else:
+                self._llm_available = False
             
         except Exception as e:
             print(f"LLM model not available ({e}). Using rule-based story generator as fallback.")
             self._llm_available = False
         
         self._initialized = True
-    
+    def generate_story(self, prompt="", character_context="", encounter_type=None, environment="any", character_level=1):
+        """High-level story generation helper dispatching to specialized routines."""
+        encounter = (encounter_type or "custom_prompt").lower()
+        env = (environment or "any").lower()
+        try:
+            level = int(character_level)
+        except (TypeError, ValueError):
+            level = 1
+        base_prompt = (prompt or "").strip()
+
+        if encounter in ("", "custom_prompt"):
+            base_prompt = base_prompt or "The heroes continue their adventure."
+            return self.generate_story_continuation(base_prompt, character_context)
+
+        if encounter == "random_encounter":
+            env_key = env if env and env != "any" else "forest"
+            level = level if level > 0 else 1
+            return self.generate_encounter(character_level=level, environment=env_key)
+
+        if encounter == "npc_dialogue":
+            npc_map = {
+                'city': 'guard',
+                'dungeon': 'scout',
+                'forest': 'ranger',
+                'mountains': 'hermit',
+                'swamp': 'wise woman',
+                'desert': 'merchant',
+                'coast': 'sailor',
+                'plains': 'scout',
+            }
+            npc_type = npc_map.get(env, 'innkeeper')
+            context = character_context or base_prompt
+            return self.generate_npc_dialogue(npc_type=npc_type, context=context)
+
+        if encounter == "location_description":
+            env_phrase = env if env and env != "any" else "mysterious land"
+            base_prompt = base_prompt or f"Describe an intriguing location in a {env_phrase}."
+            return self.generate_story_continuation(base_prompt, character_context, max_length=120)
+
+        if encounter == "plot_hook":
+            env_phrase = env if env and env != "any" else "fantasy realm"
+            base_prompt = base_prompt or f"Create a compelling plot hook that begins in a {env_phrase}."
+            return self.generate_story_continuation(base_prompt, character_context, max_length=120)
+
+        # Fallback for unknown types
+        base_prompt = base_prompt or "The party faces an unexpected twist in their quest."
+        return self.generate_story_continuation(base_prompt, character_context)
+
+
+
     def generate_story_continuation(self, prompt, character_context="", max_length=150):
         """
         Generate a story continuation based on a prompt and character context.
@@ -371,5 +440,7 @@ The story continues:"""
         return dialogue
 
 
-# Global instance
+# Global instance - initialize model immediately for faster responses
 story_generator = StoryGenerator()
+story_generator._initialize_model()  # Pre-warm the model
+
