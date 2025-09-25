@@ -1,4 +1,4 @@
-"""
+﻿"""
 D&D World Generator - Streamlit Frontend
 Enhanced UI for the Flask-based D&D character and campaign management system
 """
@@ -144,6 +144,7 @@ def invalidate_all_caches():
     """Clear all caches for fresh data"""
     get_characters.clear()
     get_character_spells.clear()
+    get_character_inventory.clear()
     get_combat_status.clear()
     st.session_state.cached_characters = None
     st.session_state.cache_timestamp = 0
@@ -151,8 +152,8 @@ def invalidate_all_caches():
 def create_character(char_data):
     """Create character via Flask backend"""
     try:
-        response = requests.post(f"{FLASK_URL}/create_character", data=char_data, timeout=8)
-        success = response.status_code in [200, 302]  # 302 for redirect after creation
+        response = requests.post(f"{FLASK_URL}/create_character", json=char_data, timeout=8)
+        success = response.status_code == 200
         if success:
             invalidate_character_cache()  # Clear cache when character is created
         return success
@@ -163,7 +164,7 @@ def delete_character(character_id: int) -> bool:
     """Delete a character"""
     try:
         response = requests.post(f"{FLASK_URL}/delete_character/{character_id}", timeout=API_TIMEOUT_SHORT)
-        if response.status_code in [200, 302]:
+        if response.status_code == 200:
             invalidate_character_cache()
             return True
         return False
@@ -190,18 +191,26 @@ def generate_ability_scores(method="4d6", race="human"):
     except:
         return None
 
+
+def navigate_to(page_label: str) -> None:
+    """Queue a navigation change for the next rerun."""
+    st.session_state.pending_navigation = page_label
+    st.rerun()
+
+
 # Inventory management functions
 @st.cache_data(ttl=10, show_spinner=False)
 def get_character_inventory(character_id: int):
-    """Get character inventory data"""
+    """Get character inventory data from the backend API."""
     try:
-        response = requests.get(f"{FLASK_URL}/character/{character_id}/inventory", timeout=API_TIMEOUT_SHORT)
+        response = requests.get(
+            f"{FLASK_URL}/character/{character_id}/inventory",
+            timeout=API_TIMEOUT_SHORT,
+        )
         if response.status_code == 200:
-            # Parse the HTML response to extract inventory data
-            # For now, return a simple structure
-            return {"equipped_items": [], "carried_items": [], "equipment_slots": {}}
+            return response.json()
         return None
-    except:
+    except Exception:
         return None
 
 def equip_item(character_id: int, item_id: int, slot: str) -> bool:
@@ -209,11 +218,14 @@ def equip_item(character_id: int, item_id: int, slot: str) -> bool:
     try:
         response = requests.post(
             f"{FLASK_URL}/character/{character_id}/equip/{item_id}",
-            data={"slot": slot},
+            json={"slot": slot},
             timeout=API_TIMEOUT_SHORT
         )
-        return response.status_code in [200, 302]
-    except:
+        success = response.status_code == 200
+        if success:
+            get_character_inventory.clear()
+        return success
+    except Exception:
         return False
 
 def unequip_item(character_id: int, slot: str) -> bool:
@@ -221,11 +233,14 @@ def unequip_item(character_id: int, slot: str) -> bool:
     try:
         response = requests.post(
             f"{FLASK_URL}/character/{character_id}/unequip",
-            data={"slot": slot},
+            json={"slot": slot},
             timeout=API_TIMEOUT_SHORT
         )
-        return response.status_code in [200, 302]
-    except:
+        success = response.status_code == 200
+        if success:
+            get_character_inventory.clear()
+        return success
+    except Exception:
         return False
 
 def add_item_to_character(character_id: int, item_name: str) -> bool:
@@ -233,58 +248,90 @@ def add_item_to_character(character_id: int, item_name: str) -> bool:
     try:
         response = requests.post(
             f"{FLASK_URL}/character/{character_id}/add_item",
-            data={"item_name": item_name},
+            json={"item_name": item_name},
             timeout=API_TIMEOUT_SHORT
         )
-        return response.status_code in [200, 302]
-    except:
+        success = response.status_code == 200
+        if success:
+            get_character_inventory.clear()
+        return success
+    except Exception:
         return False
 
 def show_character_inventory(character):
-    """Display character inventory management interface"""
-    st.markdown("---")
-    st.subheader("🎒 Inventory & Equipment")
-    
-    # Close inventory button
-    if st.button("❌ Close Inventory", key="close_inventory"):
+    """Display character inventory management interface."""
+    st.markdown('---')
+    st.subheader('🪙 Inventory & Equipment')
+
+    if st.button('❌ Close Inventory', key='close_inventory'):
         st.session_state.show_inventory = False
         st.rerun()
-    
-    # Get inventory data (simplified for now since we'd need to parse HTML)
-    st.info("📝 **Note:** This is a simplified inventory view. Full equipment management with visual slots coming soon!")
-    
-    # Mock equipment slots for demonstration
-    st.markdown("### 🛡️ Equipment Slots")
-    
-    equipment_slots = [
-        "Main Hand", "Off Hand", "Armor", "Shield", "Helmet", 
-        "Gloves", "Boots", "Cloak", "Ring 1", "Ring 2", "Amulet", "Belt"
-    ]
-    
-    cols = st.columns(3)
-    for i, slot in enumerate(equipment_slots):
-        with cols[i % 3]:
-            with st.container():
-                st.markdown(f"**{slot}**")
-                st.text("Empty Slot")  # Placeholder
-                if st.button(f"Manage {slot}", key=f"manage_{slot}_{character['id']}"):
-                    st.info(f"Managing {slot} - Full functionality coming soon!")
-    
-    st.markdown("### 🎒 Carried Items")
-    st.info("Carried items will be displayed here with equip/unequip options.")
-    
-    st.markdown("### ➕ Add New Item")
+
+    inventory = get_character_inventory(character['id'])
+    if not inventory:
+        st.warning('No inventory data available yet.')
+        return
+
+    equipped_items = inventory.get('equipped_items', [])
+    carried_items = inventory.get('carried_items', [])
+    equipment_slots = inventory.get('equipment_slots', {})
+
+    item_lookup = {item['id']: item for item in equipped_items + carried_items}
+
+    st.markdown('### 🛡️ Equipped Items')
+    slot_cols = st.columns(3)
+    for idx, (slot_name, item_id) in enumerate(sorted(equipment_slots.items())):
+        pretty_slot = slot_name.replace('_', ' ').title()
+        with slot_cols[idx % 3]:
+            st.markdown(f'**{pretty_slot}**')
+            item = item_lookup.get(item_id) if item_id else None
+            if item:
+                st.write(item['name'])
+                st.caption(f"Type: {item['item_type']} | Rarity: {item['rarity']}")
+                if st.button(f"Unequip {pretty_slot}", key=f"unequip_{slot_name}_{character['id']}"):
+                    if unequip_item(character['id'], slot_name):
+                        st.success(f"Unequipped from {pretty_slot}")
+                        invalidate_character_cache()
+                        st.rerun()
+                    else:
+                        st.error('Unable to unequip item')
+            else:
+                st.write('_Empty_')
+
+    st.markdown('### 🎒 Carried Items')
+    if not carried_items:
+        st.info('No carried items yet. Add one below!')
+    else:
+        for item in carried_items:
+            with st.expander(item['name'], expanded=False):
+                st.caption(f"Type: {item['item_type']} | Rarity: {item['rarity']}")
+                slot_choice = st.selectbox(
+                    'Equip to slot',
+                    options=[slot.replace('_', ' ').title() for slot in equipment_slots.keys()],
+                    key=f"equip_slot_{item['id']}"
+                )
+                slot_value = slot_choice.lower().replace(' ', '_')
+                if st.button(f"Equip {item['name']}", key=f"equip_{item['id']}"):
+                    if equip_item(character['id'], item['id'], slot_value):
+                        st.success(f"Equipped {item['name']} to {slot_choice}")
+                        invalidate_character_cache()
+                        st.rerun()
+                    else:
+                        st.error('Failed to equip item')
+
+    st.markdown('### ➕ Add New Item')
     with st.form(f"add_item_{character['id']}"):
-        item_name = st.text_input("Item Name", placeholder="Enter item name")
-        if st.form_submit_button("Add Item"):
+        item_name = st.text_input('Item Name', placeholder='Enter item name')
+        if st.form_submit_button('Add Item'):
             if item_name:
                 if add_item_to_character(character['id'], item_name):
                     st.success(f"Added {item_name} to inventory!")
+                    invalidate_character_cache()
                     st.rerun()
                 else:
-                    st.error("Failed to add item!")
+                    st.error('Failed to add item!')
             else:
-                st.error("Please enter an item name!")
+                st.error('Please enter an item name!')
 
 def show_combat_actions(combat):
     """Display comprehensive combat action interface"""
@@ -649,6 +696,22 @@ if 'cached_characters' not in st.session_state:
 if 'cache_timestamp' not in st.session_state:
     st.session_state.cache_timestamp = 0
 
+NAVIGATION_OPTIONS = [
+    'Dashboard',
+    'Characters',
+    'Combat',
+    'Spells',
+    'Dice Roller',
+    'Story Generator',
+    'AI Game Master',
+]
+
+if 'navigation' not in st.session_state:
+    st.session_state.navigation = NAVIGATION_OPTIONS[0]
+if 'pending_navigation' in st.session_state:
+    st.session_state.navigation = st.session_state.pending_navigation
+    del st.session_state.pending_navigation
+
 # Sidebar navigation
 st.sidebar.markdown("# 🐉 D&D Manager")
 
@@ -679,10 +742,12 @@ else:
 
 # Navigation menu
 page = st.sidebar.selectbox(
-    "Navigate to:",
-    ["🏠 Dashboard", "👤 Characters", "⚔️ Combat", "📜 Spells", "🎲 Dice Roller", "📚 Story Generator", "🧙‍♂️ AI Game Master"],
-    key="navigation"
+    'Navigate to:',
+    NAVIGATION_OPTIONS,
+    key='navigation'
 )
+
+
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Quick Actions")
@@ -711,7 +776,7 @@ def show_dashboard():
     if not characters:
         st.info("🎭 Welcome! Create your first character to get started.")
         if st.button("➕ Create Character"):
-            st.session_state.navigation = "👤 Characters"
+            navigate_to('Characters')
             st.rerun()
         return
     
@@ -853,24 +918,24 @@ def show_characters():
                 
                 if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    st.session_state.navigation = "📜 Spells"
+                    navigate_to('Spells')
                     st.rerun()
                 
                 if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    st.session_state.navigation = "👤 Characters"
+                    navigate_to('Characters')
                     st.session_state.show_inventory = True
                     st.rerun()
                 
                 if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    st.session_state.navigation = "👤 Characters"
+                    navigate_to('Characters')
                     st.session_state.show_spells = True
                     st.rerun()
                 
                 if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    st.session_state.navigation = "⚔️ Combat"
+                    navigate_to('Combat')
                     st.rerun()
                 
                 # Delete button
@@ -1536,13 +1601,16 @@ def show_story_generator():
         if characters:
             char_options = ["None"] + [c['name'] for c in characters]
             selected_char_name = st.selectbox("Focus Character (optional)", char_options)
-            selected_char_id = ""
-            
+            selected_char_id = None
+            selected_char_level = None
+
             if selected_char_name != "None":
                 selected_char = next(c for c in characters if c['name'] == selected_char_name)
-                selected_char_id = str(selected_char['id'])
+                selected_char_id = selected_char.get('id')
+                selected_char_level = selected_char.get('level', 1)
         else:
-            selected_char_id = ""
+            selected_char_id = None
+            selected_char_level = None
         
         # Story type
         story_type = st.selectbox(
@@ -1572,12 +1640,13 @@ def show_story_generator():
                 data = {
                     'prompt': prompt,
                     'character_id': selected_char_id,
+                    'character_level': selected_char_level,
                     'encounter_type': story_type.lower().replace(' ', '_'),
                     'environment': environment.lower()
                 }
                 
                 with st.spinner("Generating story..."):
-                    response = requests.post(f"{FLASK_URL}/generate_story", data=data, timeout=15)
+                    response = requests.post(f"{FLASK_URL}/generate_story", json=data, timeout=120)
                 
                 if response.status_code == 200:
                     story_data = response.json()
@@ -1690,19 +1759,19 @@ def main():
     
     # Page routing with error handling
     try:
-        if page == "🏠 Dashboard":
+        if page == 'Dashboard':
             show_dashboard()
-        elif page == "👤 Characters":
+        elif page == 'Characters':
             show_characters()
-        elif page == "⚔️ Combat":
+        elif page == 'Combat':
             show_combat()
-        elif page == "📜 Spells":
+        elif page == 'Spells':
             show_spells()
-        elif page == "🎲 Dice Roller":
+        elif page == 'Dice Roller':
             show_dice_roller()
-        elif page == "📚 Story Generator":
+        elif page == 'Story Generator':
             show_story_generator()
-        elif page == "🧙‍♂️ AI Game Master":
+        elif page == 'AI Game Master':
             show_ai_game_master()
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
@@ -2020,7 +2089,7 @@ def show_gm_combat_scene(scene, characters):
             
     with col2:
         if st.button("⚔️ Start Combat Manager", key="start_combat"):
-            st.session_state.navigation = "⚔️ Combat"
+            navigate_to('Combat')
             st.rerun()
 
 def show_gm_social_scene(scene, characters):
