@@ -197,6 +197,64 @@ def navigate_to(page_label: str) -> None:
     st.session_state.pending_navigation = page_label
     st.rerun()
 
+# Authentication functions
+def check_auth():
+    """Check if user is authenticated"""
+    try:
+        response = requests.get(f"{FLASK_URL}/api/check_auth", timeout=API_TIMEOUT_SHORT)
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('authenticated', False), result.get('user')
+        return False, None
+    except:
+        return False, None
+
+def login_user(username, password):
+    """Login user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/login", 
+                               json={'username': username, 'password': password}, 
+                               timeout=API_TIMEOUT_MEDIUM)
+        if response.status_code == 200:
+            result = response.json()
+            return True, result.get('user'), result.get('message', 'Login successful')
+        else:
+            result = response.json()
+            return False, None, result.get('error', 'Login failed')
+    except Exception as e:
+        return False, None, f"Connection error: {str(e)}"
+
+def register_user(username, password):
+    """Register new user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/register", 
+                               json={'username': username, 'password': password}, 
+                               timeout=API_TIMEOUT_MEDIUM)
+        if response.status_code == 201:
+            result = response.json()
+            return True, result.get('user'), result.get('message', 'Registration successful')
+        else:
+            result = response.json()
+            return False, None, result.get('error', 'Registration failed')
+    except Exception as e:
+        return False, None, f"Connection error: {str(e)}"
+
+def logout_user():
+    """Logout user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/logout", timeout=API_TIMEOUT_SHORT)
+        if response.status_code == 200:
+            # Clear local session state
+            if 'user' in st.session_state:
+                del st.session_state.user
+            if 'authenticated' in st.session_state:
+                del st.session_state.authenticated
+            invalidate_character_cache()  # Clear character cache
+            return True, "Logged out successfully"
+        return False, "Logout failed"
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
 
 # Inventory management functions
 @st.cache_data(ttl=10, show_spinner=False)
@@ -696,6 +754,12 @@ if 'cached_characters' not in st.session_state:
 if 'cache_timestamp' not in st.session_state:
     st.session_state.cache_timestamp = 0
 
+# Authentication state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
+
 NAVIGATION_OPTIONS = [
     'Dashboard',
     'Characters',
@@ -711,6 +775,12 @@ if 'navigation' not in st.session_state:
 if 'pending_navigation' in st.session_state:
     st.session_state.navigation = st.session_state.pending_navigation
     del st.session_state.pending_navigation
+
+# Check authentication status on app load
+if st.session_state.flask_connected and not st.session_state.authenticated:
+    authenticated, user = check_auth()
+    st.session_state.authenticated = authenticated
+    st.session_state.user = user
 
 # Sidebar navigation
 st.sidebar.markdown("# 🐉 D&D Manager")
@@ -739,13 +809,29 @@ if not st.session_state.flask_connected:
         st.rerun()
 else:
     st.sidebar.success("✅ Connected to Flask backend")
+    
+    # Show user info if authenticated
+    if st.session_state.authenticated:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(f"### 👤 Welcome, {st.session_state.user['username']}!")
+        
+        if st.sidebar.button("🚪 Logout"):
+            success, message = logout_user()
+            if success:
+                st.sidebar.success(message)
+                st.rerun()
+            else:
+                st.sidebar.error(message)
 
-# Navigation menu
-page = st.sidebar.selectbox(
-    'Navigate to:',
-    NAVIGATION_OPTIONS,
-    key='navigation'
-)
+# Navigation menu - only show if authenticated or flask not connected (for backward compatibility)
+if st.session_state.authenticated or not st.session_state.flask_connected:
+    page = st.sidebar.selectbox(
+        'Navigate to:',
+        NAVIGATION_OPTIONS,
+        key='navigation'
+    )
+else:
+    page = None  # Will show login screen
 
 
 
@@ -766,6 +852,84 @@ if st.session_state.flask_connected:
         st.session_state.flask_connected = False  # Mark as disconnected
 
 # Main content area
+def show_login_screen():
+    """Login and registration screen"""
+    st.markdown('<div class="main-header"><h1>🐉 D&D World Generator</h1><p>Welcome to the Campaign Management System</p></div>', unsafe_allow_html=True)
+    
+    # Create two columns for login and register
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔐 Login to Your Campaign")
+        
+        with st.form("login_form"):
+            login_username = st.text_input("Username", key="login_username")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_submit = st.form_submit_button("🚪 Login", use_container_width=True)
+            
+            if login_submit:
+                if login_username and login_password:
+                    with st.spinner("Logging in..."):
+                        success, user, message = login_user(login_username, login_password)
+                        if success:
+                            st.session_state.authenticated = True
+                            st.session_state.user = user
+                            st.success(f"Welcome back, {user['username']}!")
+                            time.sleep(1)  # Brief pause to show success message
+                            st.rerun()
+                        else:
+                            st.error(message)
+                else:
+                    st.error("Please enter both username and password")
+    
+    with col2:
+        st.markdown("### 📝 Create New Account")
+        
+        with st.form("register_form"):
+            reg_username = st.text_input("Choose Username", key="reg_username")
+            reg_password = st.text_input("Choose Password", type="password", key="reg_password")
+            reg_password_confirm = st.text_input("Confirm Password", type="password", key="reg_password_confirm")
+            register_submit = st.form_submit_button("✨ Create Account", use_container_width=True)
+            
+            if register_submit:
+                if reg_username and reg_password and reg_password_confirm:
+                    if reg_password != reg_password_confirm:
+                        st.error("Passwords do not match!")
+                    elif len(reg_username) < 3:
+                        st.error("Username must be at least 3 characters long")
+                    elif len(reg_password) < 6:
+                        st.error("Password must be at least 6 characters long")
+                    else:
+                        with st.spinner("Creating account..."):
+                            success, user, message = register_user(reg_username, reg_password)
+                            if success:
+                                st.session_state.authenticated = True
+                                st.session_state.user = user
+                                st.success(f"Account created! Welcome, {user['username']}!")
+                                time.sleep(1)  # Brief pause to show success message
+                                st.rerun()
+                            else:
+                                st.error(message)
+                else:
+                    st.error("Please fill in all fields")
+    
+    # Separator
+    st.markdown("---")
+    
+    # Info section
+    st.markdown("### 🎲 About D&D World Generator")
+    st.markdown("""
+    Welcome to your personal D&D campaign management system! Here you can:
+    
+    - **🧙 Create Characters**: Build detailed D&D 5e characters with full stats and equipment
+    - **⚔️ Manage Combat**: Track initiative, health, and actions in tactical combat
+    - **🔮 Cast Spells**: Manage spell slots and known spells for spellcasting characters  
+    - **🎭 Tell Stories**: Generate random adventures and roleplay with the AI Game Master
+    - **🎲 Roll Dice**: Advanced dice rolling system with modifiers and advantage
+    
+    Your characters and campaign data are stored securely and isolated to your account.
+    """)
+
 def show_dashboard():
     """Dashboard page"""
     st.markdown('<div class="main-header"><h1>🐉 D&D World Generator</h1><p>Enhanced Campaign Management System</p></div>', unsafe_allow_html=True)
@@ -1796,7 +1960,10 @@ def main():
     
     # Page routing with error handling
     try:
-        if page == 'Dashboard':
+        # Show login screen if not authenticated and flask is connected
+        if st.session_state.flask_connected and not st.session_state.authenticated:
+            show_login_screen()
+        elif page == 'Dashboard':
             show_dashboard()
         elif page == 'Characters':
             show_characters()
@@ -1810,6 +1977,12 @@ def main():
             show_story_generator()
         elif page == 'AI Game Master':
             show_ai_game_master()
+        else:
+            # Default to dashboard for authenticated users or login screen for unauthenticated
+            if st.session_state.flask_connected and not st.session_state.authenticated:
+                show_login_screen()
+            else:
+                show_dashboard()
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.info("Try refreshing the page or check your Flask backend connection.")
