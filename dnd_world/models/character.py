@@ -25,6 +25,9 @@ class Character(db.Model):
     current_hp = db.Column(db.Integer, nullable=False)
     armor_class = db.Column(db.Integer, nullable=False, default=10)
     
+    # User relationship - each character belongs to a user
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # nullable for backward compatibility
+    
     # Ability Scores - D&D 5e core stats
     strength = db.Column(db.Integer, nullable=False)
     dexterity = db.Column(db.Integer, nullable=False)
