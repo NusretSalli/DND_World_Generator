@@ -923,15 +923,13 @@ def show_characters():
                 
                 if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    navigate_to('Characters')
                     st.session_state.show_inventory = True
-                    st.rerun()
+                    navigate_to('Characters')
                 
                 if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
                     st.session_state.selected_character = char['id']
-                    navigate_to('Characters')
                     st.session_state.show_spells = True
-                    st.rerun()
+                    navigate_to('Characters')
                 
                 if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
                     st.session_state.selected_character = char['id']
@@ -1331,7 +1329,46 @@ def show_combat():
                                 new_y = st.number_input("New Y position", 0, grid_size-1, 0)
                             
                             if st.button("Move Character"):
-                                st.info("Movement feature coming soon! Use Flask interface for now.")
+                                # Find the combatant ID for the selected character
+                                selected_combatant = None
+                                for c in combatants:
+                                    if c.get('name', 'Unknown') == char_to_move:
+                                        selected_combatant = c
+                                        break
+                                
+                                if selected_combatant:
+                                    try:
+                                        # Call the spatial movement API
+                                        response = requests.post(
+                                            f"{FLASK_URL}/api/spatial/{st.session_state.combat_id}/move",
+                                            json={
+                                                "combatant_id": selected_combatant['id'],
+                                                "x": int(new_x),
+                                                "y": int(new_y)
+                                            },
+                                            timeout=API_TIMEOUT_SHORT
+                                        )
+                                        
+                                        if response.status_code == 200:
+                                            result = response.json()
+                                            if result.get('success'):
+                                                st.success(f"✅ {char_to_move} moved to position ({new_x}, {new_y})")
+                                                # Clear the spatial combat cache to force refresh
+                                                if hasattr(st.session_state, 'spatial_cache'):
+                                                    del st.session_state.spatial_cache
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ Movement failed: {result.get('error', 'Unknown error')}")
+                                        else:
+                                            error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
+                                            st.error(f"❌ Movement failed: {error_data.get('error', f'HTTP {response.status_code}')}")
+                                    
+                                    except requests.exceptions.RequestException as e:
+                                        st.error(f"❌ Network error: {str(e)}")
+                                    except Exception as e:
+                                        st.error(f"❌ Unexpected error: {str(e)}")
+                                else:
+                                    st.error("❌ Could not find selected character")
                     else:
                         st.info("No combatants found in spatial combat.")
                 else:
