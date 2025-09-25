@@ -220,15 +220,15 @@ def delete_character(character_id: int):
 
 @bp.route('/api/characters')
 def api_characters():
-    """Get characters for the current user, or all characters if not logged in (backward compatibility)."""
+    """Get characters for the current user only."""
     user_id = session.get('user_id')
     
     if user_id:
         # Return only characters belonging to the logged-in user
         characters = Character.query.filter_by(user_id=user_id).all()
     else:
-        # Backward compatibility: return characters without user_id (legacy characters)
-        characters = Character.query.filter_by(user_id=None).all()
+        # If not logged in, return empty list (no access to any characters)
+        characters = []
     
     return jsonify([_serialize_character(char) for char in characters])
 

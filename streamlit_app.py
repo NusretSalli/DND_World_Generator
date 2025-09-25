@@ -217,6 +217,8 @@ def login_user(username, password):
                                timeout=API_TIMEOUT_MEDIUM)
         if response.status_code == 200:
             result = response.json()
+            # Clear character cache when user logs in
+            invalidate_character_cache()
             return True, result.get('user'), result.get('message', 'Login successful')
         else:
             result = response.json()
@@ -232,6 +234,8 @@ def register_user(username, password):
                                timeout=API_TIMEOUT_MEDIUM)
         if response.status_code == 201:
             result = response.json()
+            # Clear character cache when user registers
+            invalidate_character_cache()
             return True, result.get('user'), result.get('message', 'Registration successful')
         else:
             result = response.json()
@@ -779,6 +783,9 @@ if 'pending_navigation' in st.session_state:
 # Check authentication status on app load
 if st.session_state.flask_connected and not st.session_state.authenticated:
     authenticated, user = check_auth()
+    if authenticated != st.session_state.authenticated:
+        # Auth status changed, clear cache
+        invalidate_character_cache()
     st.session_state.authenticated = authenticated
     st.session_state.user = user
 
