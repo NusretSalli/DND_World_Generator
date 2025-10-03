@@ -112,7 +112,13 @@ def check_flask_connection():
 def get_characters():
     """Fetch characters from Flask backend - cached"""
     try:
-        response = requests.get(f"{FLASK_URL}/api/characters", timeout=3)
+        # Get current user from session state
+        user = st.session_state.get('user')
+        if not user:
+            return []
+            
+        params = {'user_id': user['id']}
+        response = requests.get(f"{FLASK_URL}/api/characters", params=params, timeout=3)
         return response.json() if response.status_code == 200 else []
     except:
         return []
@@ -196,6 +202,68 @@ def navigate_to(page_label: str) -> None:
     """Queue a navigation change for the next rerun."""
     st.session_state.pending_navigation = page_label
     st.rerun()
+
+# Authentication functions
+def check_auth():
+    """Check if user is authenticated"""
+    try:
+        response = requests.get(f"{FLASK_URL}/api/check_auth", timeout=API_TIMEOUT_SHORT)
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('authenticated', False), result.get('user')
+        return False, None
+    except:
+        return False, None
+
+def login_user(username, password):
+    """Login user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/login", 
+                               json={'username': username, 'password': password}, 
+                               timeout=API_TIMEOUT_MEDIUM)
+        if response.status_code == 200:
+            result = response.json()
+            # Clear character cache when user logs in
+            invalidate_character_cache()
+            return True, result.get('user'), result.get('message', 'Login successful')
+        else:
+            result = response.json()
+            return False, None, result.get('error', 'Login failed')
+    except Exception as e:
+        return False, None, f"Connection error: {str(e)}"
+
+def register_user(username, password):
+    """Register new user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/register", 
+                               json={'username': username, 'password': password}, 
+                               timeout=API_TIMEOUT_MEDIUM)
+        if response.status_code == 201:
+            result = response.json()
+            # Clear character cache when user registers
+            invalidate_character_cache()
+            return True, result.get('user'), result.get('message', 'Registration successful')
+        else:
+            result = response.json()
+            return False, None, result.get('error', 'Registration failed')
+    except Exception as e:
+        return False, None, f"Connection error: {str(e)}"
+
+def logout_user():
+    """Logout user"""
+    try:
+        response = requests.post(f"{FLASK_URL}/api/logout", timeout=API_TIMEOUT_SHORT)
+        if response.status_code == 200:
+            # Clear local session state
+            if 'user' in st.session_state:
+                del st.session_state.user
+            if 'authenticated' in st.session_state:
+                del st.session_state.authenticated
+            invalidate_character_cache()  # Clear character cache
+            return True, "Logged out successfully"
+        return False, "Logout failed"
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
 
 
 # Inventory management functions
@@ -696,6 +764,12 @@ if 'cached_characters' not in st.session_state:
 if 'cache_timestamp' not in st.session_state:
     st.session_state.cache_timestamp = 0
 
+# Authentication state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
+
 NAVIGATION_OPTIONS = [
     'Dashboard',
     'Characters',
@@ -711,6 +785,15 @@ if 'navigation' not in st.session_state:
 if 'pending_navigation' in st.session_state:
     st.session_state.navigation = st.session_state.pending_navigation
     del st.session_state.pending_navigation
+
+# Check authentication status on app load
+if st.session_state.flask_connected and not st.session_state.authenticated:
+    authenticated, user = check_auth()
+    if authenticated != st.session_state.authenticated:
+        # Auth status changed, clear cache
+        invalidate_character_cache()
+    st.session_state.authenticated = authenticated
+    st.session_state.user = user
 
 # Sidebar navigation
 st.sidebar.markdown("# 🐉 D&D Manager")
@@ -739,13 +822,29 @@ if not st.session_state.flask_connected:
         st.rerun()
 else:
     st.sidebar.success("✅ Connected to Flask backend")
+    
+    # Show user info if authenticated
+    if st.session_state.authenticated:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(f"### 👤 Welcome, {st.session_state.user['username']}!")
+        
+        if st.sidebar.button("🚪 Logout"):
+            success, message = logout_user()
+            if success:
+                st.sidebar.success(message)
+                st.rerun()
+            else:
+                st.sidebar.error(message)
 
-# Navigation menu
-page = st.sidebar.selectbox(
-    'Navigate to:',
-    NAVIGATION_OPTIONS,
-    key='navigation'
-)
+# Navigation menu - only show if authenticated or flask not connected (for backward compatibility)
+if st.session_state.authenticated or not st.session_state.flask_connected:
+    page = st.sidebar.selectbox(
+        'Navigate to:',
+        NAVIGATION_OPTIONS,
+        key='navigation'
+    )
+else:
+    page = None  # Will show login screen
 
 
 
@@ -766,6 +865,84 @@ if st.session_state.flask_connected:
         st.session_state.flask_connected = False  # Mark as disconnected
 
 # Main content area
+def show_login_screen():
+    """Login and registration screen"""
+    st.markdown('<div class="main-header"><h1>🐉 D&D World Generator</h1><p>Welcome to the Campaign Management System</p></div>', unsafe_allow_html=True)
+    
+    # Create two columns for login and register
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔐 Login to Your Campaign")
+        
+        with st.form("login_form"):
+            login_username = st.text_input("Username", key="login_username")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_submit = st.form_submit_button("🚪 Login", use_container_width=True)
+            
+            if login_submit:
+                if login_username and login_password:
+                    with st.spinner("Logging in..."):
+                        success, user, message = login_user(login_username, login_password)
+                        if success:
+                            st.session_state.authenticated = True
+                            st.session_state.user = user
+                            st.success(f"Welcome back, {user['username']}!")
+                            time.sleep(1)  # Brief pause to show success message
+                            st.rerun()
+                        else:
+                            st.error(message)
+                else:
+                    st.error("Please enter both username and password")
+    
+    with col2:
+        st.markdown("### 📝 Create New Account")
+        
+        with st.form("register_form"):
+            reg_username = st.text_input("Choose Username", key="reg_username")
+            reg_password = st.text_input("Choose Password", type="password", key="reg_password")
+            reg_password_confirm = st.text_input("Confirm Password", type="password", key="reg_password_confirm")
+            register_submit = st.form_submit_button("✨ Create Account", use_container_width=True)
+            
+            if register_submit:
+                if reg_username and reg_password and reg_password_confirm:
+                    if reg_password != reg_password_confirm:
+                        st.error("Passwords do not match!")
+                    elif len(reg_username) < 3:
+                        st.error("Username must be at least 3 characters long")
+                    elif len(reg_password) < 6:
+                        st.error("Password must be at least 6 characters long")
+                    else:
+                        with st.spinner("Creating account..."):
+                            success, user, message = register_user(reg_username, reg_password)
+                            if success:
+                                st.session_state.authenticated = True
+                                st.session_state.user = user
+                                st.success(f"Account created! Welcome, {user['username']}!")
+                                time.sleep(1)  # Brief pause to show success message
+                                st.rerun()
+                            else:
+                                st.error(message)
+                else:
+                    st.error("Please fill in all fields")
+    
+    # Separator
+    st.markdown("---")
+    
+    # Info section
+    st.markdown("### 🎲 About D&D World Generator")
+    st.markdown("""
+    Welcome to your personal D&D campaign management system! Here you can:
+    
+    - **🧙 Create Characters**: Build detailed D&D 5e characters with full stats and equipment
+    - **⚔️ Manage Combat**: Track initiative, health, and actions in tactical combat
+    - **🔮 Cast Spells**: Manage spell slots and known spells for spellcasting characters  
+    - **🎭 Tell Stories**: Generate random adventures and roleplay with the AI Game Master
+    - **🎲 Roll Dice**: Advanced dice rolling system with modifiers and advantage
+    
+    Your characters and campaign data are stored securely and isolated to your account.
+    """)
+
 def show_dashboard():
     """Dashboard page"""
     st.markdown('<div class="main-header"><h1>🐉 D&D World Generator</h1><p>Enhanced Campaign Management System</p></div>', unsafe_allow_html=True)
@@ -856,171 +1033,170 @@ def show_characters():
         
         if not characters:
             st.info("No characters found. Create your first character!")
-            return
-        
-        # Character selection
-        char_names = [f"{c['name']} (Lv.{c['level']} {c['character_class']})" for c in characters]
-        
-        selected_idx = st.selectbox(
-            "Select Character",
-            range(len(char_names)),
-            format_func=lambda x: char_names[x],
-            key="char_selector"
-        )
-        
-        if selected_idx is not None:
-            char = characters[selected_idx]
+        else:
+            # Character selection
+            char_names = [f"{c['name']} (Lv.{c['level']} {c['character_class']})" for c in characters]
             
-            # Character details
-            col1, col2, col3 = st.columns([2, 2, 1])
+            selected_idx = st.selectbox(
+                "Select Character",
+                range(len(char_names)),
+                format_func=lambda x: char_names[x],
+                key="char_selector"
+            )
             
-            with col1:
-                st.markdown(f'<div class="character-card">', unsafe_allow_html=True)
-                st.subheader(f"🧙 {char['name']}")
+            if selected_idx is not None:
+                char = characters[selected_idx]
                 
-                # Basic Character Information
-                info_col1, info_col2 = st.columns(2)
-                with info_col1:
-                    st.write(f"**Race:** {char['race'].title()}")
-                    st.write(f"**Class:** {char['character_class'].title()}")
-                    st.write(f"**Level:** {char['level']}")
-                with info_col2:
-                    st.write(f"**Gender:** {char['gender'].title()}")
-                    st.write(f"**Experience:** {char.get('experience', 0)} XP")
-                    st.write(f"**Proficiency Bonus:** +{2 + (char['level'] - 1) // 4}")
+                # Character details
+                col1, col2, col3 = st.columns([2, 2, 1])
                 
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                # Health and combat stats
-                hp_percentage = char['current_hp'] / char['max_hp'] if char['max_hp'] > 0 else 0
-                st.metric("❤️ Health", f"{char['current_hp']}/{char['max_hp']}")
-                st.progress(hp_percentage)
+                with col1:
+                    st.markdown(f'<div class="character-card">', unsafe_allow_html=True)
+                    st.subheader(f"🧙 {char['name']}")
+                    
+                    # Basic Character Information
+                    info_col1, info_col2 = st.columns(2)
+                    with info_col1:
+                        st.write(f"**Race:** {char['race'].title()}")
+                        st.write(f"**Class:** {char['character_class'].title()}")
+                        st.write(f"**Level:** {char['level']}")
+                    with info_col2:
+                        st.write(f"**Gender:** {char['gender'].title()}")
+                        st.write(f"**Experience:** {char.get('experience', 0)} XP")
+                        st.write(f"**Proficiency Bonus:** +{2 + (char['level'] - 1) // 4}")
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                st.metric("🛡️ Armor Class", char['armor_class'])
+                with col2:
+                    # Health and combat stats
+                    hp_percentage = char['current_hp'] / char['max_hp'] if char['max_hp'] > 0 else 0
+                    st.metric("❤️ Health", f"{char['current_hp']}/{char['max_hp']}")
+                    st.progress(hp_percentage)
+                    
+                    st.metric("🛡️ Armor Class", char['armor_class'])
+                    
+                    # Currency
+                    gold = char.get('gold', 0)
+                    silver = char.get('silver', 0)
+                    copper = char.get('copper', 0)
+                    platinum = char.get('platinum', 0)
+                    
+                    currency_text = []
+                    if platinum > 0: currency_text.append(f"{platinum}pp")
+                    if gold > 0: currency_text.append(f"{gold}gp")
+                    if silver > 0: currency_text.append(f"{silver}sp")
+                    if copper > 0: currency_text.append(f"{copper}cp")
+                    
+                    st.write(f"**💰 Currency:** {', '.join(currency_text) if currency_text else '0 gp'}")
                 
-                # Currency
-                gold = char.get('gold', 0)
-                silver = char.get('silver', 0)
-                copper = char.get('copper', 0)
-                platinum = char.get('platinum', 0)
-                
-                currency_text = []
-                if platinum > 0: currency_text.append(f"{platinum}pp")
-                if gold > 0: currency_text.append(f"{gold}gp")
-                if silver > 0: currency_text.append(f"{silver}sp")
-                if copper > 0: currency_text.append(f"{copper}cp")
-                
-                st.write(f"**💰 Currency:** {', '.join(currency_text) if currency_text else '0 gp'}")
-            
-            with col3:
-                st.subheader("Actions")
-                
-                if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    navigate_to('Spells')
-                    st.rerun()
-                
-                if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    st.session_state.show_inventory = True
-                    navigate_to('Characters')
-                
-                if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    st.session_state.show_spells = True
-                    navigate_to('Characters')
-                
-                if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    navigate_to('Combat')
-                    st.rerun()
-                
-                # Delete button
-                st.markdown("---")
-                if st.button("🗑️ Delete Character", key=f"delete_{char['id']}", type="secondary"):
-                    # Create a confirmation dialog using session state
-                    st.session_state[f"confirm_delete_{char['id']}"] = True
-                
-                # Show confirmation dialog if delete was clicked
-                if st.session_state.get(f"confirm_delete_{char['id']}", False):
-                    st.warning(f"Are you sure you want to delete **{char['name']}**? This action cannot be undone!")
-                    col_yes, col_no = st.columns(2)
-                    with col_yes:
-                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{char['id']}", type="primary"):
-                            if delete_character(char['id']):
-                                st.success(f"Character {char['name']} deleted successfully!")
-                                # Clear caches for fresh data
-                                invalidate_character_cache()
+                with col3:
+                    st.subheader("Actions")
+                    
+                    if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        navigate_to('Spells')
+                        st.rerun()
+                    
+                    if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        st.session_state.show_inventory = True
+                        navigate_to('Characters')
+                    
+                    if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        st.session_state.show_spells = True
+                        navigate_to('Characters')
+                    
+                    if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        navigate_to('Combat')
+                        st.rerun()
+                    
+                    # Delete button
+                    st.markdown("---")
+                    if st.button("🗑️ Delete Character", key=f"delete_{char['id']}", type="secondary"):
+                        # Create a confirmation dialog using session state
+                        st.session_state[f"confirm_delete_{char['id']}"] = True
+                    
+                    # Show confirmation dialog if delete was clicked
+                    if st.session_state.get(f"confirm_delete_{char['id']}", False):
+                        st.warning(f"Are you sure you want to delete **{char['name']}**? This action cannot be undone!")
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_{char['id']}", type="primary"):
+                                if delete_character(char['id']):
+                                    st.success(f"Character {char['name']} deleted successfully!")
+                                    # Clear caches for fresh data
+                                    invalidate_character_cache()
+                                    # Clear the confirmation state
+                                    if f"confirm_delete_{char['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_delete_{char['id']}"]
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete character!")
+                        with col_no:
+                            if st.button("❌ Cancel", key=f"confirm_no_{char['id']}"):
                                 # Clear the confirmation state
                                 if f"confirm_delete_{char['id']}" in st.session_state:
                                     del st.session_state[f"confirm_delete_{char['id']}"]
                                 st.rerun()
-                            else:
-                                st.error("Failed to delete character!")
-                    with col_no:
-                        if st.button("❌ Cancel", key=f"confirm_no_{char['id']}"):
-                            # Clear the confirmation state
-                            if f"confirm_delete_{char['id']}" in st.session_state:
-                                del st.session_state[f"confirm_delete_{char['id']}"]
-                            st.rerun()
-            
-            # Ability scores
-            st.subheader("📊 Ability Scores")
-            ability_cols = st.columns(6)
-            
-            abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
-            for i, ability in enumerate(abilities):
-                score = char.get(ability, 10)
-                modifier = (score - 10) // 2
-                modifier_str = f"+{modifier}" if modifier >= 0 else str(modifier)
                 
-                with ability_cols[i]:
-                    st.metric(
-                        ability.upper()[:3],
-                        score,
-                        modifier_str
-                    )
-            
-            # Currency display
-            st.subheader("💰 Currency")
-            currency_cols = st.columns(4)
-            
-            with currency_cols[0]:
-                platinum = char.get('platinum', 0)
-                if platinum > 0:
-                    st.metric("Platinum", f"{platinum}p")
-                else:
-                    st.metric("Platinum", "0p")
-            
-            with currency_cols[1]:
-                gold = char.get('gold', 0)
-                if gold > 0:
-                    st.metric("Gold", f"{gold}g")
-                else:
-                    st.metric("Gold", "0g")
-            
-            with currency_cols[2]:
-                silver = char.get('silver', 0)
-                if silver > 0:
-                    st.metric("Silver", f"{silver}s")
-                else:
-                    st.metric("Silver", "0s")
-            
-            with currency_cols[3]:
-                copper = char.get('copper', 0)
-                if copper > 0:
-                    st.metric("Copper", f"{copper}c")
-                else:
-                    st.metric("Copper", "0c")
-            
-            # Show inventory if requested
-            if st.session_state.get('show_inventory', False):
-                show_character_inventory(char)
-            
-            # Show spells if requested
-            if st.session_state.get('show_spells', False):
-                show_character_spells(char)
+                # Ability scores
+                st.subheader("📊 Ability Scores")
+                ability_cols = st.columns(6)
+                
+                abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+                for i, ability in enumerate(abilities):
+                    score = char.get(ability, 10)
+                    modifier = (score - 10) // 2
+                    modifier_str = f"+{modifier}" if modifier >= 0 else str(modifier)
+                    
+                    with ability_cols[i]:
+                        st.metric(
+                            ability.upper()[:3],
+                            score,
+                            modifier_str
+                        )
+                
+                # Currency display
+                st.subheader("💰 Currency")
+                currency_cols = st.columns(4)
+                
+                with currency_cols[0]:
+                    platinum = char.get('platinum', 0)
+                    if platinum > 0:
+                        st.metric("Platinum", f"{platinum}p")
+                    else:
+                        st.metric("Platinum", "0p")
+                
+                with currency_cols[1]:
+                    gold = char.get('gold', 0)
+                    if gold > 0:
+                        st.metric("Gold", f"{gold}g")
+                    else:
+                        st.metric("Gold", "0g")
+                
+                with currency_cols[2]:
+                    silver = char.get('silver', 0)
+                    if silver > 0:
+                        st.metric("Silver", f"{silver}s")
+                    else:
+                        st.metric("Silver", "0s")
+                
+                with currency_cols[3]:
+                    copper = char.get('copper', 0)
+                    if copper > 0:
+                        st.metric("Copper", f"{copper}c")
+                    else:
+                        st.metric("Copper", "0c")
+                
+                # Show inventory if requested
+                if st.session_state.get('show_inventory', False):
+                    show_character_inventory(char)
+                
+                # Show spells if requested
+                if st.session_state.get('show_spells', False):
+                    show_character_spells(char)
     
     with tab2:
         st.subheader("➕ Create New Character")
@@ -1096,6 +1272,11 @@ def show_characters():
                 if not name.strip():
                     st.error("Please enter a character name!")
                 else:
+                    # Check if user is logged in
+                    if not st.session_state.get('user'):
+                        st.error("Please log in first to create a character!")
+                        return
+                    
                     char_data = {
                         'name': name.strip(),
                         'race': race.lower(),
@@ -1106,7 +1287,8 @@ def show_characters():
                         'constitution': constitution,
                         'intelligence': intelligence,
                         'wisdom': wisdom,
-                        'charisma': charisma
+                        'charisma': charisma,
+                        'user_id': st.session_state.user['id']
                     }
                     
                     with st.spinner("Creating character..."):
@@ -1796,7 +1978,10 @@ def main():
     
     # Page routing with error handling
     try:
-        if page == 'Dashboard':
+        # Show login screen if not authenticated and flask is connected
+        if st.session_state.flask_connected and not st.session_state.authenticated:
+            show_login_screen()
+        elif page == 'Dashboard':
             show_dashboard()
         elif page == 'Characters':
             show_characters()
@@ -1810,6 +1995,12 @@ def main():
             show_story_generator()
         elif page == 'AI Game Master':
             show_ai_game_master()
+        else:
+            # Default to dashboard for authenticated users or login screen for unauthenticated
+            if st.session_state.flask_connected and not st.session_state.authenticated:
+                show_login_screen()
+            else:
+                show_dashboard()
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         st.info("Try refreshing the page or check your Flask backend connection.")

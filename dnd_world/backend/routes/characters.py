@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from flask import jsonify, request
+from flask import jsonify, request, session
 
 from dnd_world.database import db
 from dnd_world.models import Character, Item
@@ -157,6 +157,13 @@ def create_character():
         level = _to_int(data.get('level'), 1)
         max_hp = calculate_max_hp(char_class, constitution_mod, level)
         dexterity = _to_int(data.get('dexterity'))
+        
+        # Get current user ID from session or request data
+        user_id = session.get('user_id') or data.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'User authentication required'}), 401
+        
         new_character = Character(
             name=data['name'],
             gender=data['gender'],
@@ -177,6 +184,7 @@ def create_character():
             silver=_to_int(data.get('silver')),
             copper=_to_int(data.get('copper')),
             platinum=_to_int(data.get('platinum')),
+            user_id=user_id,  # Associate character with current user
         )
     except ValueError:
         return jsonify({'error': 'Ability scores must be integers.'}), 400
@@ -215,7 +223,17 @@ def delete_character(character_id: int):
 
 @bp.route('/api/characters')
 def api_characters():
-    characters = Character.query.all()
+    """Get characters for the current user only."""
+    # Get user_id from session or request parameters
+    user_id = session.get('user_id') or request.args.get('user_id', type=int)
+    
+    if user_id:
+        # Return only characters belonging to the logged-in user
+        characters = Character.query.filter_by(user_id=user_id).all()
+    else:
+        # If not logged in, return empty list (no access to any characters)
+        characters = []
+    
     return jsonify([_serialize_character(char) for char in characters])
 
 
