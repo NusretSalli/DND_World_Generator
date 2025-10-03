@@ -15,7 +15,7 @@ STREAMLIT_HOST = "localhost"
 # Application Settings
 APP_TITLE = "🐉 D&D World Generator"
 APP_ICON = "🐉"
-LAYOUT = "wide"  # "centered" or "wide"
+LAYOUT = "wide"
 
 # Theme Configuration
 DARK_THEME = True
@@ -36,7 +36,7 @@ SHOW_MODIFIERS = True
 ENABLE_ADVANTAGE_DISADVANTAGE = True
 
 # Character Creation Settings
-DEFAULT_ABILITY_SCORE_METHOD = "4d6"  # "4d6", "standard", "manual"
+DEFAULT_ABILITY_SCORE_METHOD = "4d6"
 RACIAL_BONUSES_ENABLED = True
 AUTO_CALCULATE_MODIFIERS = True
 
@@ -46,36 +46,35 @@ ENABLE_CANTRIP_CASTING = True
 AUTO_DEDUCT_SPELL_SLOTS = True
 
 # Story Generator Settings
-DEFAULT_STORY_LENGTH = "medium"  # "short", "medium", "long"
+DEFAULT_STORY_LENGTH = "medium"
 ENABLE_CHARACTER_CONTEXT = True
 DEFAULT_ENVIRONMENT = "any"
 
 # Performance Configuration
 ENABLE_CACHING = True
-CACHE_TTL_SHORT = 10   # seconds - for frequently changing data
-CACHE_TTL_MEDIUM = 30  # seconds - for character data
-CACHE_TTL_LONG = 300   # seconds - for static data
+CACHE_TTL_SHORT = 10
+CACHE_TTL_MEDIUM = 30
+CACHE_TTL_LONG = 300
 
-# Reduce heavy visualizations for better performance
 ENABLE_HEALTH_CHARTS = True
-ENABLE_SPATIAL_COMBAT_VISUAL = False  # Can be enabled per-session
-CHART_ANIMATION = False  # Disable animations for faster rendering
-CHART_HEIGHT = 400  # Reduced from default
+ENABLE_SPATIAL_COMBAT_VISUAL = False
+CHART_ANIMATION = False
+CHART_HEIGHT = 400
 
-# API Timeout Settings (reduced for faster failure detection)
-API_TIMEOUT_SHORT = 2   # For quick operations (was 3)
-API_TIMEOUT_MEDIUM = 3  # For normal operations (was 5)
-API_TIMEOUT_LONG = 8    # For complex operations (was 15)
+# API Timeout Settings
+API_TIMEOUT_SHORT = 2
+API_TIMEOUT_MEDIUM = 3
+API_TIMEOUT_LONG = 8
 
 # UI Performance Settings
-AUTO_REFRESH_INTERVAL = 30  # Increased from 5 seconds
+AUTO_REFRESH_INTERVAL = 30
 SHOW_LOADING_SPINNERS = True
 LAZY_LOAD_CHARTS = True
 MINIMIZE_REDRAWS = True
 
 # Cache Settings
 CACHE_CHARACTER_DATA = True
-CACHE_DURATION = 300  # 5 minutes
+CACHE_DURATION = 300
 
 # Feature Flags
 ENABLE_SPATIAL_COMBAT = True
@@ -97,14 +96,14 @@ VALIDATE_SPELL_SLOTS = True
 # Export/Import Settings
 ENABLE_CHARACTER_EXPORT = True
 ENABLE_CAMPAIGN_BACKUP = True
-EXPORT_FORMAT = "json"  # "json", "csv", "xml"
+EXPORT_FORMAT = "json"
 
 # Advanced Features
 ENABLE_ANALYTICS = False
-ENABLE_MULTIPLAYER = False  # Future feature
-ENABLE_VOICE_COMMANDS = False  # Future feature
+ENABLE_MULTIPLAYER = False
+ENABLE_VOICE_COMMANDS = False
 
 # Error Handling
 MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
-GRACEFUL_DEGRADATION = True  # Continue working even if some features fail
+RETRY_DELAY = 1
+GRACEFUL_DEGRADATION = True

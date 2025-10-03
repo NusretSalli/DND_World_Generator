@@ -11,11 +11,10 @@ from .routes import bp, ensure_default_character, populate_standard_enemies
 def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
     
-    # Set configurations explicitly
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dnd_characters.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JSON_SORT_KEYS'] = False
-    app.config['SECRET_KEY'] = secrets.token_hex(32)  # For session management
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
 
     if config:
         app.config.update(config)
