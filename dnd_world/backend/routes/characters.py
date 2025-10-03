@@ -158,8 +158,11 @@ def create_character():
         max_hp = calculate_max_hp(char_class, constitution_mod, level)
         dexterity = _to_int(data.get('dexterity'))
         
-        # Get current user ID from session
-        user_id = session.get('user_id')
+        # Get current user ID from session or request data
+        user_id = session.get('user_id') or data.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': 'User authentication required'}), 401
         
         new_character = Character(
             name=data['name'],
@@ -221,7 +224,8 @@ def delete_character(character_id: int):
 @bp.route('/api/characters')
 def api_characters():
     """Get characters for the current user only."""
-    user_id = session.get('user_id')
+    # Get user_id from session or request parameters
+    user_id = session.get('user_id') or request.args.get('user_id', type=int)
     
     if user_id:
         # Return only characters belonging to the logged-in user

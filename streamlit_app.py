@@ -112,7 +112,13 @@ def check_flask_connection():
 def get_characters():
     """Fetch characters from Flask backend - cached"""
     try:
-        response = requests.get(f"{FLASK_URL}/api/characters", timeout=3)
+        # Get current user from session state
+        user = st.session_state.get('user')
+        if not user:
+            return []
+            
+        params = {'user_id': user['id']}
+        response = requests.get(f"{FLASK_URL}/api/characters", params=params, timeout=3)
         return response.json() if response.status_code == 200 else []
     except:
         return []
@@ -1027,171 +1033,170 @@ def show_characters():
         
         if not characters:
             st.info("No characters found. Create your first character!")
-            return
-        
-        # Character selection
-        char_names = [f"{c['name']} (Lv.{c['level']} {c['character_class']})" for c in characters]
-        
-        selected_idx = st.selectbox(
-            "Select Character",
-            range(len(char_names)),
-            format_func=lambda x: char_names[x],
-            key="char_selector"
-        )
-        
-        if selected_idx is not None:
-            char = characters[selected_idx]
+        else:
+            # Character selection
+            char_names = [f"{c['name']} (Lv.{c['level']} {c['character_class']})" for c in characters]
             
-            # Character details
-            col1, col2, col3 = st.columns([2, 2, 1])
+            selected_idx = st.selectbox(
+                "Select Character",
+                range(len(char_names)),
+                format_func=lambda x: char_names[x],
+                key="char_selector"
+            )
             
-            with col1:
-                st.markdown(f'<div class="character-card">', unsafe_allow_html=True)
-                st.subheader(f"🧙 {char['name']}")
+            if selected_idx is not None:
+                char = characters[selected_idx]
                 
-                # Basic Character Information
-                info_col1, info_col2 = st.columns(2)
-                with info_col1:
-                    st.write(f"**Race:** {char['race'].title()}")
-                    st.write(f"**Class:** {char['character_class'].title()}")
-                    st.write(f"**Level:** {char['level']}")
-                with info_col2:
-                    st.write(f"**Gender:** {char['gender'].title()}")
-                    st.write(f"**Experience:** {char.get('experience', 0)} XP")
-                    st.write(f"**Proficiency Bonus:** +{2 + (char['level'] - 1) // 4}")
+                # Character details
+                col1, col2, col3 = st.columns([2, 2, 1])
                 
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                # Health and combat stats
-                hp_percentage = char['current_hp'] / char['max_hp'] if char['max_hp'] > 0 else 0
-                st.metric("❤️ Health", f"{char['current_hp']}/{char['max_hp']}")
-                st.progress(hp_percentage)
+                with col1:
+                    st.markdown(f'<div class="character-card">', unsafe_allow_html=True)
+                    st.subheader(f"🧙 {char['name']}")
+                    
+                    # Basic Character Information
+                    info_col1, info_col2 = st.columns(2)
+                    with info_col1:
+                        st.write(f"**Race:** {char['race'].title()}")
+                        st.write(f"**Class:** {char['character_class'].title()}")
+                        st.write(f"**Level:** {char['level']}")
+                    with info_col2:
+                        st.write(f"**Gender:** {char['gender'].title()}")
+                        st.write(f"**Experience:** {char.get('experience', 0)} XP")
+                        st.write(f"**Proficiency Bonus:** +{2 + (char['level'] - 1) // 4}")
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                st.metric("🛡️ Armor Class", char['armor_class'])
+                with col2:
+                    # Health and combat stats
+                    hp_percentage = char['current_hp'] / char['max_hp'] if char['max_hp'] > 0 else 0
+                    st.metric("❤️ Health", f"{char['current_hp']}/{char['max_hp']}")
+                    st.progress(hp_percentage)
+                    
+                    st.metric("🛡️ Armor Class", char['armor_class'])
+                    
+                    # Currency
+                    gold = char.get('gold', 0)
+                    silver = char.get('silver', 0)
+                    copper = char.get('copper', 0)
+                    platinum = char.get('platinum', 0)
+                    
+                    currency_text = []
+                    if platinum > 0: currency_text.append(f"{platinum}pp")
+                    if gold > 0: currency_text.append(f"{gold}gp")
+                    if silver > 0: currency_text.append(f"{silver}sp")
+                    if copper > 0: currency_text.append(f"{copper}cp")
+                    
+                    st.write(f"**💰 Currency:** {', '.join(currency_text) if currency_text else '0 gp'}")
                 
-                # Currency
-                gold = char.get('gold', 0)
-                silver = char.get('silver', 0)
-                copper = char.get('copper', 0)
-                platinum = char.get('platinum', 0)
-                
-                currency_text = []
-                if platinum > 0: currency_text.append(f"{platinum}pp")
-                if gold > 0: currency_text.append(f"{gold}gp")
-                if silver > 0: currency_text.append(f"{silver}sp")
-                if copper > 0: currency_text.append(f"{copper}cp")
-                
-                st.write(f"**💰 Currency:** {', '.join(currency_text) if currency_text else '0 gp'}")
-            
-            with col3:
-                st.subheader("Actions")
-                
-                if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    navigate_to('Spells')
-                    st.rerun()
-                
-                if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    st.session_state.show_inventory = True
-                    navigate_to('Characters')
-                
-                if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    st.session_state.show_spells = True
-                    navigate_to('Characters')
-                
-                if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
-                    st.session_state.selected_character = char['id']
-                    navigate_to('Combat')
-                    st.rerun()
-                
-                # Delete button
-                st.markdown("---")
-                if st.button("🗑️ Delete Character", key=f"delete_{char['id']}", type="secondary"):
-                    # Create a confirmation dialog using session state
-                    st.session_state[f"confirm_delete_{char['id']}"] = True
-                
-                # Show confirmation dialog if delete was clicked
-                if st.session_state.get(f"confirm_delete_{char['id']}", False):
-                    st.warning(f"Are you sure you want to delete **{char['name']}**? This action cannot be undone!")
-                    col_yes, col_no = st.columns(2)
-                    with col_yes:
-                        if st.button("✅ Yes, Delete", key=f"confirm_yes_{char['id']}", type="primary"):
-                            if delete_character(char['id']):
-                                st.success(f"Character {char['name']} deleted successfully!")
-                                # Clear caches for fresh data
-                                invalidate_character_cache()
+                with col3:
+                    st.subheader("Actions")
+                    
+                    if st.button("📜 View Spells", key=f"view_spells_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        navigate_to('Spells')
+                        st.rerun()
+                    
+                    if st.button("🎒 Inventory", key=f"inventory_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        st.session_state.show_inventory = True
+                        navigate_to('Characters')
+                    
+                    if st.button("🔮 Spells", key=f"manage_spells_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        st.session_state.show_spells = True
+                        navigate_to('Characters')
+                    
+                    if st.button("⚔️ Combat", key=f"combat_{char['id']}"):
+                        st.session_state.selected_character = char['id']
+                        navigate_to('Combat')
+                        st.rerun()
+                    
+                    # Delete button
+                    st.markdown("---")
+                    if st.button("🗑️ Delete Character", key=f"delete_{char['id']}", type="secondary"):
+                        # Create a confirmation dialog using session state
+                        st.session_state[f"confirm_delete_{char['id']}"] = True
+                    
+                    # Show confirmation dialog if delete was clicked
+                    if st.session_state.get(f"confirm_delete_{char['id']}", False):
+                        st.warning(f"Are you sure you want to delete **{char['name']}**? This action cannot be undone!")
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("✅ Yes, Delete", key=f"confirm_yes_{char['id']}", type="primary"):
+                                if delete_character(char['id']):
+                                    st.success(f"Character {char['name']} deleted successfully!")
+                                    # Clear caches for fresh data
+                                    invalidate_character_cache()
+                                    # Clear the confirmation state
+                                    if f"confirm_delete_{char['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_delete_{char['id']}"]
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete character!")
+                        with col_no:
+                            if st.button("❌ Cancel", key=f"confirm_no_{char['id']}"):
                                 # Clear the confirmation state
                                 if f"confirm_delete_{char['id']}" in st.session_state:
                                     del st.session_state[f"confirm_delete_{char['id']}"]
                                 st.rerun()
-                            else:
-                                st.error("Failed to delete character!")
-                    with col_no:
-                        if st.button("❌ Cancel", key=f"confirm_no_{char['id']}"):
-                            # Clear the confirmation state
-                            if f"confirm_delete_{char['id']}" in st.session_state:
-                                del st.session_state[f"confirm_delete_{char['id']}"]
-                            st.rerun()
-            
-            # Ability scores
-            st.subheader("📊 Ability Scores")
-            ability_cols = st.columns(6)
-            
-            abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
-            for i, ability in enumerate(abilities):
-                score = char.get(ability, 10)
-                modifier = (score - 10) // 2
-                modifier_str = f"+{modifier}" if modifier >= 0 else str(modifier)
                 
-                with ability_cols[i]:
-                    st.metric(
-                        ability.upper()[:3],
-                        score,
-                        modifier_str
-                    )
-            
-            # Currency display
-            st.subheader("💰 Currency")
-            currency_cols = st.columns(4)
-            
-            with currency_cols[0]:
-                platinum = char.get('platinum', 0)
-                if platinum > 0:
-                    st.metric("Platinum", f"{platinum}p")
-                else:
-                    st.metric("Platinum", "0p")
-            
-            with currency_cols[1]:
-                gold = char.get('gold', 0)
-                if gold > 0:
-                    st.metric("Gold", f"{gold}g")
-                else:
-                    st.metric("Gold", "0g")
-            
-            with currency_cols[2]:
-                silver = char.get('silver', 0)
-                if silver > 0:
-                    st.metric("Silver", f"{silver}s")
-                else:
-                    st.metric("Silver", "0s")
-            
-            with currency_cols[3]:
-                copper = char.get('copper', 0)
-                if copper > 0:
-                    st.metric("Copper", f"{copper}c")
-                else:
-                    st.metric("Copper", "0c")
-            
-            # Show inventory if requested
-            if st.session_state.get('show_inventory', False):
-                show_character_inventory(char)
-            
-            # Show spells if requested
-            if st.session_state.get('show_spells', False):
-                show_character_spells(char)
+                # Ability scores
+                st.subheader("📊 Ability Scores")
+                ability_cols = st.columns(6)
+                
+                abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+                for i, ability in enumerate(abilities):
+                    score = char.get(ability, 10)
+                    modifier = (score - 10) // 2
+                    modifier_str = f"+{modifier}" if modifier >= 0 else str(modifier)
+                    
+                    with ability_cols[i]:
+                        st.metric(
+                            ability.upper()[:3],
+                            score,
+                            modifier_str
+                        )
+                
+                # Currency display
+                st.subheader("💰 Currency")
+                currency_cols = st.columns(4)
+                
+                with currency_cols[0]:
+                    platinum = char.get('platinum', 0)
+                    if platinum > 0:
+                        st.metric("Platinum", f"{platinum}p")
+                    else:
+                        st.metric("Platinum", "0p")
+                
+                with currency_cols[1]:
+                    gold = char.get('gold', 0)
+                    if gold > 0:
+                        st.metric("Gold", f"{gold}g")
+                    else:
+                        st.metric("Gold", "0g")
+                
+                with currency_cols[2]:
+                    silver = char.get('silver', 0)
+                    if silver > 0:
+                        st.metric("Silver", f"{silver}s")
+                    else:
+                        st.metric("Silver", "0s")
+                
+                with currency_cols[3]:
+                    copper = char.get('copper', 0)
+                    if copper > 0:
+                        st.metric("Copper", f"{copper}c")
+                    else:
+                        st.metric("Copper", "0c")
+                
+                # Show inventory if requested
+                if st.session_state.get('show_inventory', False):
+                    show_character_inventory(char)
+                
+                # Show spells if requested
+                if st.session_state.get('show_spells', False):
+                    show_character_spells(char)
     
     with tab2:
         st.subheader("➕ Create New Character")
@@ -1267,6 +1272,11 @@ def show_characters():
                 if not name.strip():
                     st.error("Please enter a character name!")
                 else:
+                    # Check if user is logged in
+                    if not st.session_state.get('user'):
+                        st.error("Please log in first to create a character!")
+                        return
+                    
                     char_data = {
                         'name': name.strip(),
                         'race': race.lower(),
@@ -1277,7 +1287,8 @@ def show_characters():
                         'constitution': constitution,
                         'intelligence': intelligence,
                         'wisdom': wisdom,
-                        'charisma': charisma
+                        'charisma': charisma,
+                        'user_id': st.session_state.user['id']
                     }
                     
                     with st.spinner("Creating character..."):
