@@ -19,12 +19,9 @@ def init_app(app):
 @event.listens_for(Engine, "connect")
 def set_sqlite_pragma(dbapi_connection, _):
     """Ensure SQLite enforces foreign keys."""
-    try:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-    except Exception:
-        pass
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 __all__ = ["db", "migrate", "init_app"]

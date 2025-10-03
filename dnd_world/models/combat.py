@@ -2,7 +2,6 @@
 
 from dnd_world.database import db
 
-# Combat System Models
 
 class Combat(db.Model):
     """
@@ -14,11 +13,10 @@ class Combat(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     current_round = db.Column(db.Integer, default=1)
-    current_turn = db.Column(db.Integer, default=0)  # Index in turn order
+    current_turn = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     
-    # Relationships
     combatants = db.relationship('Combatant', backref='combat', lazy=True, cascade='all, delete-orphan')
     
     def __repr__(self):
@@ -42,7 +40,7 @@ class Combat(db.Model):
         turn_order = self.turn_order
         if turn_order:
             self.current_turn = (self.current_turn + 1) % len(turn_order)
-            if self.current_turn == 0:  # Back to first combatant
+            if self.current_turn == 0:
                 self.current_round += 1
             db.session.commit()
 
@@ -57,23 +55,19 @@ class Combatant(db.Model):
     combat_id = db.Column(db.Integer, db.ForeignKey('combat.id', ondelete='CASCADE'), nullable=False)
     character_id = db.Column(db.Integer, db.ForeignKey('character.id', ondelete='CASCADE'), nullable=False)
     
-    # Combat state
     initiative = db.Column(db.Integer, nullable=False)
-    current_hp = db.Column(db.Integer, nullable=False)  # Can be different from character HP
+    current_hp = db.Column(db.Integer, nullable=False)
     temp_hp = db.Column(db.Integer, default=0)
-    conditions = db.Column(db.Text)  # JSON string for status conditions
+    conditions = db.Column(db.Text)
     
-    # Death saving throws
     death_save_successes = db.Column(db.Integer, default=0)
     death_save_failures = db.Column(db.Integer, default=0)
     
-    # Actions this turn
     has_action = db.Column(db.Boolean, default=True)
     has_bonus_action = db.Column(db.Boolean, default=True)
     has_movement = db.Column(db.Boolean, default=True)
     has_reaction = db.Column(db.Boolean, default=True)
     
-    # Relationships
     character = db.relationship(
         'Character',
         backref=db.backref('combatant_instances', cascade='all, delete-orphan'),
@@ -132,7 +126,6 @@ class Combatant(db.Model):
         self.has_action = True
         self.has_bonus_action = True
         self.has_movement = True
-        # Reaction stays until start of next turn
         db.session.commit()
     
     def apply_damage(self, damage):
@@ -147,19 +140,17 @@ class Combatant(db.Model):
         
         self.current_hp -= damage
         
-        # If dropped to 0 or below, start death saves if not already dead
         if self.current_hp <= 0 and not self.is_dead:
             self.current_hp = 0
-            # Add unconscious condition
             self.add_condition('unconscious')
         
         db.session.commit()
     
     def heal(self, healing):
         """Apply healing to the combatant."""
-        if self.current_hp > 0:  # Can only heal conscious creatures
+        if self.current_hp > 0:
             self.current_hp = min(self.current_hp + healing, self.character.max_hp)
-        elif self.current_hp == 0 and healing > 0:  # Revive from unconscious
+        elif self.current_hp == 0 and healing > 0:
             self.current_hp = healing
             self.death_save_successes = 0
             self.death_save_failures = 0
@@ -176,18 +167,14 @@ class CombatAction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     combat_id = db.Column(db.Integer, db.ForeignKey('combat.id', ondelete='CASCADE'), nullable=False)
     actor_id = db.Column(db.Integer, db.ForeignKey('combatant.id', ondelete='CASCADE'), nullable=False)
-    target_id = db.Column(db.Integer, db.ForeignKey('combatant.id', ondelete='SET NULL'), nullable=True)  # Can be null for non-targeted actions
+    target_id = db.Column(db.Integer, db.ForeignKey('combatant.id', ondelete='SET NULL'), nullable=True)
     
-    action_type = db.Column(db.String(50), nullable=False)  # attack, dodge, dash, etc.
+    action_type = db.Column(db.String(50), nullable=False)
     round_number = db.Column(db.Integer, nullable=False)
-    
-    # Action details (JSON)
-    action_data = db.Column(db.Text)  # weapon used, damage dealt, etc.
-    result = db.Column(db.Text)  # hit/miss, damage dealt, etc.
-    
+    action_data = db.Column(db.Text)
+    result = db.Column(db.Text)
     timestamp = db.Column(db.DateTime, default=db.func.current_timestamp())
     
-    # Relationships
     actor = db.relationship(
         'Combatant',
         foreign_keys=[actor_id],
@@ -213,7 +200,6 @@ class Enemy(db.Model):
     hit_points = db.Column(db.Integer, nullable=False)
     speed = db.Column(db.Integer, nullable=False, default=30)
     
-    # Ability scores
     strength = db.Column(db.Integer, nullable=False)
     dexterity = db.Column(db.Integer, nullable=False)
     constitution = db.Column(db.Integer, nullable=False)
@@ -221,23 +207,20 @@ class Enemy(db.Model):
     wisdom = db.Column(db.Integer, nullable=False)
     charisma = db.Column(db.Integer, nullable=False)
     
-    # Challenge rating and XP
     challenge_rating = db.Column(db.Float, nullable=False)
     experience_points = db.Column(db.Integer, nullable=False)
     
-    # Senses and special properties
     passive_perception = db.Column(db.Integer, default=10)
     darkvision = db.Column(db.Integer, default=0)
     
-    # JSON fields for complex data
-    saving_throws = db.Column(db.Text)  # JSON
-    skills = db.Column(db.Text)  # JSON
-    damage_resistances = db.Column(db.Text)  # JSON
-    damage_immunities = db.Column(db.Text)  # JSON
-    condition_immunities = db.Column(db.Text)  # JSON
-    languages = db.Column(db.Text)  # JSON
-    actions = db.Column(db.Text)  # JSON
-    special_abilities = db.Column(db.Text)  # JSON
+    saving_throws = db.Column(db.Text)
+    skills = db.Column(db.Text)
+    damage_resistances = db.Column(db.Text)
+    damage_immunities = db.Column(db.Text)
+    condition_immunities = db.Column(db.Text)
+    languages = db.Column(db.Text)
+    actions = db.Column(db.Text)
+    special_abilities = db.Column(db.Text)
     
     @property
     def strength_modifier(self):

@@ -11,13 +11,11 @@ class User(db.Model):
     Simple authentication system for campaign management.
     Each user can have multiple characters in their campaign.
     """
-    # Basic information
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     salt = db.Column(db.String(32), nullable=False)
     
-    # Relationship to characters - each user owns their characters
     characters = db.relationship(
         'Character',
         backref=db.backref('user'),
@@ -51,11 +49,9 @@ class User(db.Model):
     @classmethod
     def create_user(cls, username, password):
         """Create a new user account."""
-        # Check if username already exists
         if cls.query.filter_by(username=username).first():
             return None, "Username already exists"
         
-        # Create new user
         user = cls(username=username)
         user.set_password(password)
         
