@@ -10,6 +10,7 @@ from pynames.generators.russian import PaganNamesGenerator
 from pynames.generators.scandinavian import ScandinavianNamesGenerator
 
 from dnd_world.utils.dice import DiceRoller, apply_racial_bonuses, calculate_ability_modifier
+from dnd_world.database import cleanup_old_combat_sessions, cleanup_orphaned_items, get_database_stats
 
 from . import bp
 
@@ -75,3 +76,36 @@ def roll_dice():
         'notation': result.dice_notation,
         'description': str(result),
     })
+
+
+@bp.route('/database/cleanup', methods=['POST'])
+def cleanup_database():
+    """Clean up old data from the database to prevent clutter."""
+    data = request.get_json(silent=True) or {}
+    days_old = data.get('days_old', 7)
+    
+    try:
+        # Clean up old combat sessions
+        combat_cleaned = cleanup_old_combat_sessions(days_old)
+        
+        # Clean up orphaned items
+        items_cleaned = cleanup_orphaned_items()
+        
+        return jsonify({
+            'success': True,
+            'combats_removed': combat_cleaned,
+            'items_removed': items_cleaned,
+            'message': f'Cleaned {combat_cleaned} old combat sessions and {items_cleaned} orphaned items'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@bp.route('/database/stats')
+def database_stats():
+    """Get database statistics."""
+    try:
+        stats = get_database_stats()
+        return jsonify({'success': True, 'stats': stats})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
