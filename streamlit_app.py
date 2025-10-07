@@ -1,4 +1,4 @@
-﻿"""
+"""
 D&D World Generator - Streamlit Frontend
 Enhanced UI for the Flask-based D&D character and campaign management system
 """
