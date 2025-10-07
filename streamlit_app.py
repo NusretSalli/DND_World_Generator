@@ -773,7 +773,6 @@ if 'user' not in st.session_state:
 NAVIGATION_OPTIONS = [
     'Dashboard',
     'Characters',
-    'Combat',
     'Spells',
     'Dice Roller',
     'Story Generator',
@@ -1300,6 +1299,166 @@ def show_characters():
                             st.rerun()
                         else:
                             st.error("❌ Failed to create character. Please check your Flask backend.")
+
+def show_spatial_combat_grid(combat_id, key_suffix=""):
+    """Display spatial combat grid with movement controls"""
+    if not combat_id:
+        st.info("Start a combat first to use spatial features")
+        return
+    
+    try:
+        response = requests.get(f"{FLASK_URL}/api/spatial/{combat_id}/state", timeout=5)
+        
+        if response.status_code == 200:
+            spatial_data = response.json()
+            
+            grid = spatial_data.get('grid', {})
+            combatants = spatial_data.get('combatants', [])
+            
+            if combatants:
+                # Create combat grid visualization
+                grid_size = 20  # Default grid size
+                
+                # Extract combatant positions
+                x_coords = [c.get('x', 0) for c in combatants]
+                y_coords = [c.get('y', 0) for c in combatants]
+                names = [c.get('name', 'Unknown') for c in combatants]
+                hover_text = [f"{c.get('name', 'Unknown')}<br>HP: {c.get('hp', 0)}/{c.get('max_hp', 1)}<br>Position: ({c.get('x', 0)}, {c.get('y', 0)})" for c in combatants]
+                
+                # Color based on health
+                colors = []
+                for c in combatants:
+                    hp_ratio = c.get('hp', 0) / max(c.get('max_hp', 1), 1)
+                    if hp_ratio > 0.7:
+                        colors.append('#51cf66')  # Green - healthy
+                    elif hp_ratio > 0.3:
+                        colors.append('#ffd43b')  # Yellow - wounded
+                    elif hp_ratio > 0:
+                        colors.append('#ff6b6b')  # Red - badly wounded
+                    else:
+                        colors.append('#495057')  # Gray - unconscious/dead
+                
+                # Create the plot
+                fig = go.Figure()
+                
+                # Add grid lines
+                for i in range(grid_size + 1):
+                    fig.add_shape(
+                        type="line",
+                        x0=i-0.5, y0=-0.5,
+                        x1=i-0.5, y1=grid_size-0.5,
+                        line=dict(color="#2d3742", width=1)
+                    )
+                    fig.add_shape(
+                        type="line",
+                        x0=-0.5, y0=i-0.5,
+                        x1=grid_size-0.5, y1=i-0.5,
+                        line=dict(color="#2d3742", width=1)
+                    )
+                
+                # Add combatants
+                fig.add_trace(go.Scatter(
+                    x=x_coords,
+                    y=y_coords,
+                    mode='markers+text',
+                    marker=dict(
+                        size=25,
+                        color=colors,
+                        line=dict(color='white', width=2)
+                    ),
+                    text=names,
+                    textposition="middle center",
+                    textfont=dict(color="white", size=10),
+                    hovertext=hover_text,
+                    hoverinfo="text",
+                    name="Combatants"
+                ))
+                
+                fig.update_layout(
+                    title="Combat Grid",
+                    xaxis=dict(
+                        range=[-0.5, grid_size-0.5],
+                        dtick=1,
+                        showgrid=False,
+                        title="X"
+                    ),
+                    yaxis=dict(
+                        range=[-0.5, grid_size-0.5],
+                        dtick=1,
+                        showgrid=False,
+                        title="Y"
+                    ),
+                    paper_bgcolor='rgba(15, 20, 25, 0.8)',
+                    plot_bgcolor='#0f1419',
+                    height=600,
+                    font_color='#e6edf3',
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Quick movement controls
+                st.subheader("Quick Movement")
+                if combatants:
+                    char_to_move = st.selectbox(
+                        "Select character to move",
+                        [c.get('name', 'Unknown') for c in combatants],
+                        key=f"char_to_move_{key_suffix}"
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_x = st.number_input("New X position", 0, grid_size-1, 0, key=f"new_x_{key_suffix}")
+                    with col2:
+                        new_y = st.number_input("New Y position", 0, grid_size-1, 0, key=f"new_y_{key_suffix}")
+                    
+                    if st.button("Move Character", key=f"move_char_{key_suffix}"):
+                        # Find the combatant ID for the selected character
+                        selected_combatant = None
+                        for c in combatants:
+                            if c.get('name', 'Unknown') == char_to_move:
+                                selected_combatant = c
+                                break
+                        
+                        if selected_combatant:
+                            try:
+                                # Call the spatial movement API
+                                response = requests.post(
+                                    f"{FLASK_URL}/api/spatial/{combat_id}/move",
+                                    json={
+                                        "combatant_id": selected_combatant['id'],
+                                        "x": int(new_x),
+                                        "y": int(new_y)
+                                    },
+                                    timeout=API_TIMEOUT_SHORT
+                                )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    if result.get('success'):
+                                        st.success(f"✅ {char_to_move} moved to position ({new_x}, {new_y})")
+                                        # Clear the spatial combat cache to force refresh
+                                        if hasattr(st.session_state, 'spatial_cache'):
+                                            del st.session_state.spatial_cache
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ Movement failed: {result.get('error', 'Unknown error')}")
+                                else:
+                                    error_data = response.json() if response.headers.get('content-type', '').startswith('application/json') else {}
+                                    st.error(f"❌ Movement failed: {error_data.get('error', f'HTTP {response.status_code}')}")
+                            
+                            except requests.exceptions.RequestException as e:
+                                st.error(f"❌ Network error: {str(e)}")
+                            except Exception as e:
+                                st.error(f"❌ Unexpected error: {str(e)}")
+                        else:
+                            st.error("❌ Could not find selected character")
+            else:
+                st.info("No combatants found in spatial combat.")
+        else:
+            st.error("Failed to load spatial combat data")
+    except Exception as e:
+        st.error(f"Error loading spatial combat: {str(e)}")
 
 def show_combat():
     """Combat management page"""
@@ -1985,8 +2144,6 @@ def main():
             show_dashboard()
         elif page == 'Characters':
             show_characters()
-        elif page == 'Combat':
-            show_combat()
         elif page == 'Spells':
             show_spells()
         elif page == 'Dice Roller':
@@ -2292,7 +2449,7 @@ def generate_scene_rewards(characters):
     return random.choices(possible_rewards, k=num_rewards)
 
 def show_gm_combat_scene(scene, characters):
-    """Display combat scene interface"""
+    """Display combat scene interface with spatial combat grid"""
     st.markdown("### ⚔️ Combat Encounter!")
     
     enemies = scene.get('enemies', [])
@@ -2302,23 +2459,61 @@ def show_gm_combat_scene(scene, characters):
         for enemy in enemies:
             st.markdown(f"• **{enemy['name']}** (HP: {enemy['hp']}, AC: {enemy['ac']})")
     
-    col1, col2 = st.columns(2)
+    # Check if spatial combat is already active
+    has_active_combat = hasattr(st.session_state, 'combat_id') and st.session_state.combat_id
     
-    with col1:
-        if st.button("🎲 Roll Initiative", key="roll_init"):
-            import random
-            party_init = random.randint(1, 20) + 2
-            enemy_init = random.randint(1, 20) + 1
+    if not has_active_combat:
+        # Show button to start spatial combat
+        st.markdown("---")
+        if st.button("⚔️ Start Spatial Combat", type="primary", key="start_spatial_combat"):
+            # Get character IDs from the characters present in the scene
+            char_names = scene.get('characters_present', [])
+            char_ids = []
             
-            if party_init >= enemy_init:
-                st.success(f"🎉 Party goes first! (Party: {party_init}, Enemies: {enemy_init})")
+            # Find character IDs by name
+            for char in characters:
+                if char['name'] in char_names:
+                    char_ids.append(char['id'])
+            
+            # If no specific characters, use all available characters
+            if not char_ids and characters:
+                char_ids = [c['id'] for c in characters[:4]]  # Limit to 4 characters
+            
+            if char_ids:
+                try:
+                    # Start combat via API
+                    response = requests.post(
+                        f"{FLASK_URL}/combat/start",
+                        json={"character_ids": char_ids, "name": "AI GM Combat"},
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 200:
+                        combat_data = response.json()
+                        st.session_state.combat_id = combat_data.get('combat_id')
+                        st.success("Spatial combat started!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to start combat: {response.status_code}")
+                except Exception as e:
+                    st.error(f"Error starting combat: {str(e)}")
             else:
-                st.warning(f"⚠️ Enemies go first! (Enemies: {enemy_init}, Party: {party_init})")
-            
-    with col2:
-        if st.button("⚔️ Start Combat Manager", key="start_combat"):
-            navigate_to('Combat')
+                st.warning("No characters available to start combat!")
+    else:
+        # Display spatial combat grid
+        st.markdown("---")
+        st.subheader("🗺️ Spatial Combat Grid")
+        show_spatial_combat_grid(st.session_state.combat_id, key_suffix="gm")
+        
+        # Add button to end combat
+        st.markdown("---")
+        if st.button("🏁 End Combat", key="end_combat_gm"):
+            if hasattr(st.session_state, 'combat_id'):
+                del st.session_state.combat_id
+            st.session_state.gm_session['party_status'] = 'exploring'
+            st.success("Combat ended!")
             st.rerun()
+
 
 def show_gm_social_scene(scene, characters):
     """Display social encounter interface"""
