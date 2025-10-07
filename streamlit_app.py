@@ -775,7 +775,6 @@ NAVIGATION_OPTIONS = [
     'Characters',
     'Spells',
     'Dice Roller',
-    'Story Generator',
     'AI Game Master',
 ]
 
@@ -1970,146 +1969,6 @@ def show_dice_roller():
             st.write(f"**Total:** {sum(rolls)}")
             st.write(f"**Range:** {min(rolls)} - {max(rolls)}")
 
-def show_story_generator():
-    """Story generator page"""
-    st.header("📚 Story Generator")
-    
-    characters = get_characters()
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Generate Adventure Content")
-        
-        # Character context
-        if characters:
-            char_options = ["None"] + [c['name'] for c in characters]
-            selected_char_name = st.selectbox("Focus Character (optional)", char_options)
-            selected_char_id = None
-            selected_char_level = None
-
-            if selected_char_name != "None":
-                selected_char = next(c for c in characters if c['name'] == selected_char_name)
-                selected_char_id = selected_char.get('id')
-                selected_char_level = selected_char.get('level', 1)
-        else:
-            selected_char_id = None
-            selected_char_level = None
-        
-        # Story type
-        story_type = st.selectbox(
-            "Story Type",
-            ["Custom Prompt", "Random Encounter", "NPC Dialogue", "Location Description", "Plot Hook"]
-        )
-        
-        # Story prompt
-        if story_type == "Custom Prompt":
-            prompt = st.text_area(
-                "Story Prompt",
-                placeholder="Describe the situation or ask for a story continuation...",
-                height=100
-            )
-        else:
-            prompt = ""
-            st.info(f"Will generate: {story_type}")
-        
-        # Environment/setting
-        environment = st.selectbox(
-            "Environment",
-            ["Any", "Forest", "Dungeon", "City", "Mountains", "Swamp", "Desert", "Coast", "Plains"]
-        )
-        
-        if st.button("✨ Generate Story", type="primary"):
-            try:
-                data = {
-                    'prompt': prompt,
-                    'character_id': selected_char_id,
-                    'character_level': selected_char_level,
-                    'encounter_type': story_type.lower().replace(' ', '_'),
-                    'environment': environment.lower()
-                }
-                
-                with st.spinner("Generating story..."):
-                    response = requests.post(f"{FLASK_URL}/generate_story", json=data, timeout=120)
-                
-                if response.status_code == 200:
-                    story_data = response.json()
-                    story = story_data.get('story', 'No story generated')
-                    st.session_state.current_story = story
-                else:
-                    st.error("Failed to generate story")
-            except Exception as e:
-                st.error(f"Error generating story: {str(e)}")
-    
-    with col2:
-        st.subheader("💡 Quick Ideas")
-        
-        # Quick story prompts
-        quick_prompts = [
-            "The party finds a mysterious locked chest",
-            "A stranger approaches in the tavern",
-            "Strange sounds echo from the forest",
-            "The ground begins to shake",
-            "A merchant offers a peculiar deal",
-            "Ancient runes glow on the wall",
-            "The weather suddenly changes",
-            "A cry for help echoes nearby"
-        ]
-        
-        for prompt in quick_prompts:
-            if st.button(f"💭 {prompt[:25]}...", key=f"quick_{prompt}", use_container_width=True):
-                st.session_state.suggested_prompt = prompt
-                # Auto-fill the prompt
-                st.rerun()
-        
-        st.markdown("---")
-        
-        # Story stats
-        st.subheader("📊 Campaign Stats")
-        st.metric("Total Characters", len(characters))
-        
-        if characters:
-            total_levels = sum(c.get('level', 1) for c in characters)
-            st.metric("Party Level", f"{total_levels // len(characters):.0f}")
-            
-            alive_chars = sum(1 for c in characters if c.get('current_hp', 0) > 0)
-            st.metric("Characters Alive", alive_chars)
-    
-    # Display generated story
-    if hasattr(st.session_state, 'current_story') and st.session_state.current_story:
-        st.markdown("---")
-        st.subheader("📖 Generated Story")
-        
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #17202a, #1e2a3a); 
-            padding: 25px; 
-            border-radius: 12px; 
-            border-left: 4px solid #8ab4f8;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            font-size: 16px;
-            line-height: 1.6;
-        ">
-        {st.session_state.current_story}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Story actions
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            if st.button("📋 Copy Story"):
-                st.write("Copy functionality would be implemented here")
-        
-        with col2:
-            if st.button("🔄 Generate Another"):
-                st.session_state.current_story = None
-                st.rerun()
-        
-        with col3:
-            if st.button("💾 Save Story"):
-                st.info("Story saving feature coming soon!")
-
 # Main app logic
 def main():
     """Main application logic"""
@@ -2123,6 +1982,44 @@ def main():
             st.cache_data.clear()  # Clear all cached data
             st.success("Data refreshed!")
             st.rerun()
+        
+        # Database maintenance section
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🗄️ Database Maintenance")
+        
+        if st.sidebar.button("🧹 Clean Database"):
+            try:
+                with st.spinner("Cleaning database..."):
+                    response = requests.post(
+                        f"{FLASK_URL}/database/cleanup",
+                        json={"days_old": 7},
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        st.sidebar.success(result.get('message', 'Database cleaned!'))
+                    else:
+                        st.sidebar.error("Failed to clean database")
+            except Exception as e:
+                st.sidebar.error(f"Error: {str(e)}")
+        
+        if st.sidebar.button("📊 Database Stats"):
+            try:
+                response = requests.get(f"{FLASK_URL}/database/stats", timeout=5)
+                
+                if response.status_code == 200:
+                    stats = response.json().get('stats', {})
+                    st.sidebar.markdown("**Database Statistics:**")
+                    st.sidebar.text(f"Characters: {stats.get('characters', 0)}")
+                    st.sidebar.text(f"Active Combats: {stats.get('active_combats', 0)}")
+                    st.sidebar.text(f"Total Combats: {stats.get('total_combats', 0)}")
+                    st.sidebar.text(f"Items: {stats.get('items', 0)}")
+                    st.sidebar.text(f"Users: {stats.get('users', 0)}")
+                else:
+                    st.sidebar.error("Failed to get stats")
+            except Exception as e:
+                st.sidebar.error(f"Error: {str(e)}")
         
         # Performance debugging (only show if there are issues)
         if st.sidebar.checkbox("🔧 Performance Debug", value=False):
@@ -2154,8 +2051,6 @@ def main():
             show_spells()
         elif page == 'Dice Roller':
             show_dice_roller()
-        elif page == 'Story Generator':
-            show_story_generator()
         elif page == 'AI Game Master':
             show_ai_game_master()
         else:
@@ -2170,8 +2065,8 @@ def main():
 
 # AI Game Master Functions
 def show_ai_game_master():
-    """AI Game Master page with dynamic storytelling"""
-    st.header("🧙‍♂️ AI Game Master")
+    """AI Game Master page with dynamic storytelling and story generation"""
+    st.header("🧙‍♂️ AI Game Master & Story Generator")
     
     # Get characters for context
     characters = get_characters_optimized()
@@ -2187,6 +2082,17 @@ def show_ai_game_master():
             'inventory_rewards': []
         }
     
+    # Add tabs for different modes
+    tab1, tab2 = st.tabs(["🎭 Dynamic Campaign", "📚 Story Generator"])
+    
+    with tab1:
+        show_dynamic_campaign(characters)
+    
+    with tab2:
+        show_integrated_story_generator(characters)
+
+def show_dynamic_campaign(characters):
+    """Show the dynamic campaign GM interface"""
     # GM Control Panel
     col1, col2 = st.columns([2, 1])
     
@@ -2286,6 +2192,9 @@ def show_ai_game_master():
         if st.button("📋 View Story Log"):
             show_story_log()
         
+        if st.button("🧹 Clean Story Log", help="Remove old scenes to keep database clean"):
+            clean_story_log()
+        
         if st.button("🔄 Reset Campaign"):
             if st.checkbox("Confirm Reset"):
                 st.session_state.gm_session = {
@@ -2298,6 +2207,183 @@ def show_ai_game_master():
                 }
                 st.success("Campaign reset!")
                 st.rerun()
+
+def show_integrated_story_generator(characters):
+    """Integrated story generator within AI Game Master"""
+    st.subheader("📚 Generate Adventure Content")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Character context
+        if characters:
+            char_options = ["None"] + [c['name'] for c in characters]
+            selected_char_name = st.selectbox("Focus Character (optional)", char_options, key="sg_char")
+            selected_char_id = None
+            selected_char_level = None
+
+            if selected_char_name != "None":
+                selected_char = next(c for c in characters if c['name'] == selected_char_name)
+                selected_char_id = selected_char.get('id')
+                selected_char_level = selected_char.get('level', 1)
+        else:
+            selected_char_id = None
+            selected_char_level = None
+        
+        # Story type
+        story_type = st.selectbox(
+            "Story Type",
+            ["Custom Prompt", "Random Encounter", "NPC Dialogue", "Location Description", "Plot Hook"],
+            key="sg_type"
+        )
+        
+        # Story prompt
+        if story_type == "Custom Prompt":
+            prompt = st.text_area(
+                "Story Prompt",
+                placeholder="Describe the situation or ask for a story continuation...",
+                height=100,
+                key="sg_prompt"
+            )
+        else:
+            prompt = ""
+            st.info(f"Will generate: {story_type}")
+        
+        # Environment/setting
+        environment = st.selectbox(
+            "Environment",
+            ["Any", "Forest", "Dungeon", "City", "Mountains", "Swamp", "Desert", "Coast", "Plains"],
+            key="sg_env"
+        )
+        
+        col_gen, col_scene = st.columns(2)
+        
+        with col_gen:
+            if st.button("✨ Generate Story", type="primary", key="sg_generate"):
+                try:
+                    data = {
+                        'prompt': prompt,
+                        'character_id': selected_char_id,
+                        'character_level': selected_char_level,
+                        'encounter_type': story_type.lower().replace(' ', '_'),
+                        'environment': environment.lower()
+                    }
+                    
+                    with st.spinner("Generating story..."):
+                        response = requests.post(f"{FLASK_URL}/generate_story", json=data, timeout=120)
+                    
+                    if response.status_code == 200:
+                        story_data = response.json()
+                        story = story_data.get('story', 'No story generated')
+                        st.session_state.current_story = story
+                    else:
+                        st.error("Failed to generate story")
+                except Exception as e:
+                    st.error(f"Error generating story: {str(e)}")
+        
+        with col_scene:
+            if st.button("🎲 Create Scene from Story", key="sg_create_scene", help="Convert generated story into an active scene"):
+                if hasattr(st.session_state, 'current_story') and st.session_state.current_story:
+                    create_scene_from_story(st.session_state.current_story, characters)
+                    st.success("Scene created! Switch to Dynamic Campaign tab to view it.")
+                    st.rerun()
+                else:
+                    st.warning("Generate a story first!")
+    
+    with col2:
+        st.subheader("💡 Quick Ideas")
+        
+        # Quick story prompts
+        quick_prompts = [
+            "The party finds a mysterious locked chest",
+            "A stranger approaches in the tavern",
+            "Strange sounds echo from the forest",
+            "The ground begins to shake",
+            "A merchant offers a peculiar deal",
+            "Ancient runes glow on the wall",
+            "The weather suddenly changes",
+            "A cry for help echoes nearby"
+        ]
+        
+        for prompt in quick_prompts:
+            if st.button(f"💭 {prompt[:25]}...", key=f"quick_{prompt}", use_container_width=True):
+                st.session_state.suggested_prompt = prompt
+                st.rerun()
+        
+        st.markdown("---")
+        
+        # Story stats
+        st.subheader("📊 Campaign Stats")
+        st.metric("Total Characters", len(characters))
+        
+        if characters:
+            total_levels = sum(c.get('level', 1) for c in characters)
+            st.metric("Party Level", f"{total_levels // len(characters):.0f}")
+            
+            alive_chars = sum(1 for c in characters if c.get('current_hp', 0) > 0)
+            st.metric("Characters Alive", alive_chars)
+    
+    # Display generated story
+    if hasattr(st.session_state, 'current_story') and st.session_state.current_story:
+        st.markdown("---")
+        st.subheader("📖 Generated Story")
+        
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, #17202a, #1e2a3a); 
+            padding: 25px; 
+            border-radius: 12px; 
+            border-left: 4px solid #8ab4f8;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            font-size: 16px;
+            line-height: 1.6;
+        ">
+        {st.session_state.current_story}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Story actions
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📋 Copy Story", key="sg_copy"):
+                st.write("Copy functionality would be implemented here")
+        
+        with col2:
+            if st.button("🔄 Generate Another", key="sg_another"):
+                st.session_state.current_story = None
+                st.rerun()
+        
+        with col3:
+            if st.button("💾 Save Story", key="sg_save"):
+                st.info("Story saving feature coming soon!")
+
+def create_scene_from_story(story_text, characters):
+    """Convert a generated story into an active scene"""
+    import random
+    
+    scene = {
+        'type': 'narrative',
+        'title': 'Generated Story Scene',
+        'description': story_text,
+        'id': f"story_scene_{st.session_state.gm_session['scene_counter'] + 1}",
+        'characters_present': [c['name'] for c in characters[:4]] if characters else []
+    }
+    
+    st.session_state.gm_session['current_scene'] = scene
+    st.session_state.gm_session['scene_counter'] += 1
+    st.session_state.gm_session['story_log'].append(scene)
+
+def clean_story_log():
+    """Clean old scenes from story log to prevent database clutter"""
+    story_log = st.session_state.gm_session.get('story_log', [])
+    
+    if len(story_log) > 10:
+        # Keep only the last 10 scenes
+        st.session_state.gm_session['story_log'] = story_log[-10:]
+        st.success(f"Cleaned {len(story_log) - 10} old scenes from the story log!")
+    else:
+        st.info("Story log is already clean (10 or fewer scenes).")
 
 def generate_new_scene(characters):
     """Generate a new scene with the AI GM"""
