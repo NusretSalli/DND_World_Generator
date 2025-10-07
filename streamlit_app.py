@@ -1464,6 +1464,8 @@ def show_combat():
     """Combat management page"""
     st.header("⚔️ Combat Manager")
     
+    characters = get_characters()
+    
     if not characters:
         st.info("Create characters first to start combat!")
         return
@@ -1723,6 +1725,8 @@ def show_spells():
     """Spells management page"""
     st.header("📜 Spell Management")
     
+    characters = get_characters()
+    
     # Filter spellcasting characters
     spellcasting_classes = ['wizard', 'sorcerer', 'cleric', 'bard', 'druid', 'warlock', 'paladin', 'ranger']
     spellcasters = [c for c in characters if c.get('character_class', '').lower() in spellcasting_classes]
@@ -1969,6 +1973,8 @@ def show_dice_roller():
 def show_story_generator():
     """Story generator page"""
     st.header("📚 Story Generator")
+    
+    characters = get_characters()
     
     col1, col2 = st.columns([2, 1])
     
